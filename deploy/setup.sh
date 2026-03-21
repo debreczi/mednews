@@ -26,6 +26,9 @@ error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 info "Starting MedNews setup on Ubuntu 24 LTS..."
 
+# Allow root to operate on the app dir regardless of ownership
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
 # ── System packages ─────────────────────────────────────────────────────────────
 
 info "Updating package lists..."
