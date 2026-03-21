@@ -4,6 +4,13 @@ Note: Scrapy uses Twisted's reactor. We use CrawlerRunner (not CrawlerProcess) s
 can share the asyncio event loop configured in scrapy settings via TWISTED_REACTOR.
 Actual per-spider stats are tracked by DatabasePipeline; runner returns aggregate totals.
 """
+# Must install the asyncio reactor before any other Twisted/Scrapy imports
+try:
+    from twisted.internet import asyncioreactor
+    asyncioreactor.install()
+except Exception:
+    pass  # Already installed
+
 import importlib
 import inspect
 import logging
