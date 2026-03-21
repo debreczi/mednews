@@ -15,6 +15,7 @@ import importlib
 import inspect
 import logging
 import pkgutil
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,11 @@ async def _crawl_source(spider_cls, source) -> dict[str, Any]:
     from scrapy.utils.project import get_project_settings
     import asyncio
 
+    import os
+    os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "backend.scraper.settings")
+    # Point Playwright to browsers installed during setup (no home dir needed)
+    app_dir = str(Path(__file__).parent.parent.parent)
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", f"{app_dir}/.playwright-browsers")
     settings = get_project_settings()
     runner = CrawlerRunner(settings)
 
