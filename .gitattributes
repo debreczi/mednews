@@ -1,0 +1,6 @@
+# Ensure shell scripts always use LF (required for Linux execution)
+deploy/setup.sh text eol=lf
+*.sh text eol=lf
+
+# Normalise everything else
+* text=auto

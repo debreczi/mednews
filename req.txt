@@ -1,0 +1,77 @@
+# MedNews
+
+## Introduction
+
+I want to create a service that scrapes Hungarian medical news from the internet and writes a digest on it in Hungarian and displays it on a web page. It should reflect on the daily happenings in Medical news, especially it and business news related to the medical industry. The service should be updated daily, ensuring that users have access to the latest information in the field of medical IT.
+
+The mail target audience for this service would be professionals working in medical it solutions. Such as software developers, project managers, business developers, creatives and executives in the medical IT industry. The service should provide them with a convenient way to stay informed about the latest developments and trends in the field, helping them to make informed decisions and stay ahead of the competition.
+
+## Page Layout
+
+The web page should be super simple and user-friendly, allowing users to easily navigate through the news articles. The news articles should be displayed in a clean and organized manner, with the most recent news appearing at the top.
+
+On the top left, a logo should be displayed, representing the MedNews brand. The logo should be simple and memorable, reflecting the focus on medical news.
+
+On the top right, should be a search bar, allowing users to search for specific topics or keywords or dates related to medical news. The search results should be displayed in a clear and concise manner, making it easy for users to find the information they are looking for.
+
+The main content area should be dedicated to displaying the news articles. Each article should be presented in a card format, with the title, summary, and source URL link prominently displayed. If an image is available, it should be included in the card to enhance the visual appeal.
+
+Each card should have share icons for popular social media platforms, allowing users to easily share the news articles with their friends and followers. There should also be a "Share in teams" button, enabling users to share the news articles within their professional networks.
+
+There should be a footer at the bottom of the page, providing additional information about the MedNews service, such as contact information, privacy policy, and terms of service.
+
+The article cards should be displayed date descending order, with the most recent news appearing at the top. Each card should include the original title of the news article, a new, more engaging title that I will create, an AI-generated concise summary that is humorous and informative, a source URL link in Hungarian, an image URL (if available), the date collected, and the date of the news article. The design should be clean and organized, making it easy for users to navigate and find the information they are looking for.
+
+At first load, the page should load 25 articles. If the user scrolls down, it should load more articles in batches of 25 until there are no more articles to load. This infinite scrolling feature will provide a seamless browsing experience for users, allowing them to easily access a large number of news articles without having to navigate through multiple pages.
+
+On the top of the page, there should be a simple filter option that allows users to filter news articles by date. By selecting the date, the content part of the page refreshes, and it shows only the news articles that were published on the selected date and before.
+
+## Data Format
+
+The news should be in JSON files:
+- Original title: the tile from the source.
+- Mednews title: New, more engaging title that is humorous and cynical, making it more appealing to readers.
+- Summary: AI generated concise summary. It should be humorous, providing a quick overview of the news article while also adding a touch of satire to make it more engaging for readers. It should not be a lead or trailer or teaser, it should be good enough, so that the reader would NOT have to read the original article, but still be informed. Important: If the new article is about a sad or tragic event, the summary should be respectful and sensitive, avoiding any humor or satire in such cases.
+- Link text: Source URL link with a text something like "If you really care, you can read the original article here: 'New achievements in EESZ'", or something like that, but it should be in Hungarian. The link text should contain the original tile of the news article.
+- Image URL (if available)
+- Date Collected
+- Date of the news article
+- Relevance score
+
+## Operations
+
+* At first run, the service should be initialized:
+    * It should collect sources where it should get data from. These should be medical portals, news sites, blogs, and social media channels that regularly publish medical news in Hungarian. The sources should be diverse and cover a wide range of topics within the medical field, including IT and business news related to the medical industry. It should contain information from X.com accounts, FB, Instagram and linkedIn pages, as well as RSS feeds from relevant websites. Even if it is Hungarian news, it can be collected from important international sources as well (IQVIA, Medical international AI news, European market, etc.). This should consist of at least 50 sources.
+    * It should scrape the source for at least 100 news articles.
+
+* There should be a cron job, that runs every day at 5 am.
+    * The source list should be updated, ensuring that any new sources are added and any inactive sources are removed. This will help to maintain the relevance and quality of the news articles being collected.
+* The cron job should also scrape the sources for new articles, ensuring that the news feed is always up-to-date. This includes:
+    * Scraping the sources for new articles and adding them to the database. Reading the articles and giving them a score from 1 to 10 based on their relevance and importance. Only articles with a score of 6 or higher should be saved. This relevance score should be configured in configuration file, so it can be easily adjusted if needed. The relevance score is included with the article data.
+    * For each article with a relevance score of 6 or higher, the service should perform the following operations:
+        - Create a news article json object with the fields mentioned in the Data Format section.
+        - An image should be downloaded for each article if available, and the image URL should be included in the JSON object. If no image is available, a default image should be used (e.g. a logo of the source webpage).
+        - The news article should be enriched with AI generated content, including:
+            - MedNews title
+            - Summary
+            - Link text
+    * The article should be saved to the database, ensuring that it is properly indexed.
+
+
+## Technology Stack
+
+It should be a simple, one page app.
+* Web Scraping: Scrapy for scraping the news articles from the sources.
+* Database: Something very light for this project.
+* Web Backend: Some very lightweight API for returning the news articles.
+* Scraping backend: Some lightweight backend for running the scraping operations and cron jobs. That has good integration with Scrapy and the database.
+* Web Frontend: A simple frontend framework for displaying the news articles in a user-friendly manner. It should be very smooth and responsive, especially the scrolling adding new articles like Facebook or Twitter feed. It should be a single page application, so it can provide a seamless browsing experience for users.
+* AI enrichment: Use Groq API for generating the MedNews title, summary, and link text for each news article. The AI-generated content should be concise, engaging, and informative, providing users with a quick overview of the news articles while also adding a touch of humor and satire to make it more appealing. To save costs, the AI enrichment should only be performed on articles that have a relevance score of 6 or higher, ensuring that only the most relevant and important news articles are enriched with AI-generated content. Also, send the articles in batches to the Groq API, so it can process multiple articles at once, reducing the number of API calls and improving efficiency.
+* Logging. There should be a logging system in place to track the scraping operations, including any errors or issues that may arise. Also it should track API calls and user interactions on the web page, providing insights into user behavior and engagement with the news articles. Nothing too complex, just a simple audit log will do.
+* Running environment: I would like to run it on an ubuntu 24 VM, so it should be easy to set up and deploy on a virtual machine. 
+
+
+
+
+
+

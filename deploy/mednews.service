@@ -1,0 +1,28 @@
+[Unit]
+Description=MedNews API Server
+After=network.target
+Documentation=https://github.com/yourorg/mednews
+
+[Service]
+Type=simple
+User=mednews
+Group=mednews
+WorkingDirectory=/opt/mednews
+EnvironmentFile=/opt/mednews/.env
+ExecStart=/opt/mednews/.venv/bin/uvicorn backend.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/mednews
+
+[Install]
+WantedBy=multi-user.target
