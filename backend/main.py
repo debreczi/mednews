@@ -1,9 +1,12 @@
 """FastAPI application entry point."""
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from .database import init_db
 from .services.scheduler import start_scheduler, stop_scheduler
@@ -52,3 +55,14 @@ app.include_router(admin.router)
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "mednews-api"}
+
+
+# Serve Vue SPA — must come after all API routes
+_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if _dist.exists():
+    app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        """Return index.html for all non-API routes (Vue Router)."""
+        return FileResponse(_dist / "index.html")

@@ -1,28 +1,31 @@
 #!/usr/bin/env bash
-# deploy/setup.sh — MedNews Ubuntu 24 LTS setup
-# Usage: bash deploy/setup.sh   (no sudo needed — only apt steps use sudo internally)
+# deploy/setup.sh — MedNews installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/debreczi/mednews/main/deploy/setup.sh | sudo bash
+# Or:    sudo bash deploy/setup.sh
+# Creates a MedNews/ directory in the current working directory.
 set -euo pipefail
 
-APP_DIR="/opt/mednews"
+REPO="https://github.com/debreczi/mednews.git"
+INSTALL_DIR="$(pwd)/MedNews"
 RUN_USER="${SUDO_USER:-$USER}"
+PORT="${PORT:-8000}"
 
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
-[[ $EUID -ne 0 ]] && error "Run with sudo: sudo bash deploy/setup.sh"
-[[ ! -d "$APP_DIR" ]] && error "$APP_DIR not found. Clone the repo there first."
+[[ $EUID -ne 0 ]] && error "Run with sudo: sudo bash setup.sh"
 
-info "Setting up MedNews for user: $RUN_USER"
+info "Installing MedNews into $INSTALL_DIR (running as $RUN_USER)..."
 
 # ── System packages ──────────────────────────────────────────────────────────
 info "Installing system packages..."
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-    curl gnupg ca-certificates git build-essential \
-    libssl-dev libffi-dev python3 python3-venv python3-dev \
-    nginx sqlite3
+    curl git build-essential \
+    python3 python3-venv python3-dev \
+    sqlite3
 
 # ── Node 20 ─────────────────────────────────────────────────────────────────
 if ! command -v node &>/dev/null; then
@@ -30,37 +33,43 @@ if ! command -v node &>/dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt-get install -y nodejs
 fi
-info "Node $(node --version), npm $(npm --version)"
+info "Node $(node --version) / npm $(npm --version)"
 
-# ── Ownership: give the real user full control ───────────────────────────────
-info "Setting $APP_DIR ownership to $RUN_USER..."
-chown -R "$RUN_USER:$RUN_USER" "$APP_DIR"
+# ── Clone repo ───────────────────────────────────────────────────────────────
+if [[ -d "$INSTALL_DIR" ]]; then
+    info "Directory exists, pulling latest..."
+    git -C "$INSTALL_DIR" pull
+else
+    info "Cloning repository..."
+    git clone "$REPO" "$INSTALL_DIR"
+fi
+chown -R "$RUN_USER:$RUN_USER" "$INSTALL_DIR"
 
 # ── Python venv ──────────────────────────────────────────────────────────────
-info "Creating Python virtual environment..."
-cd "$APP_DIR"
+info "Setting up Python environment..."
+cd "$INSTALL_DIR"
 sudo -u "$RUN_USER" python3 -m venv .venv
-sudo -u "$RUN_USER" .venv/bin/pip install --upgrade pip --quiet
-sudo -u "$RUN_USER" .venv/bin/pip install -r requirements.txt --quiet
+sudo -u "$RUN_USER" .venv/bin/pip install --upgrade pip -q
+sudo -u "$RUN_USER" .venv/bin/pip install -r requirements.txt -q
 
 # ── Playwright ───────────────────────────────────────────────────────────────
-info "Installing Playwright system dependencies..."
+info "Installing Playwright..."
 .venv/bin/playwright install-deps chromium
-info "Installing Playwright browsers..."
 sudo -u "$RUN_USER" .venv/bin/playwright install chromium
 
 # ── .env ─────────────────────────────────────────────────────────────────────
-if [[ ! -f "$APP_DIR/.env" ]]; then
-    sudo -u "$RUN_USER" cp "$APP_DIR/.env.example" "$APP_DIR/.env"
-    warn "======================================================"
-    warn " Edit $APP_DIR/.env — set GROQ_API_KEY + ADMIN_API_KEY"
-    warn "======================================================"
+if [[ ! -f "$INSTALL_DIR/.env" ]]; then
+    sudo -u "$RUN_USER" cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+    warn "────────────────────────────────────────────────────────"
+    warn " Edit $INSTALL_DIR/.env"
+    warn " Set: GROQ_API_KEY and ADMIN_API_KEY"
+    warn "────────────────────────────────────────────────────────"
     read -rp "Press ENTER after editing .env to continue..."
 else
-    info ".env already exists, skipping."
+    info ".env exists, skipping."
 fi
 
-# ── DB migration + seed ──────────────────────────────────────────────────────
+# ── DB + seed ────────────────────────────────────────────────────────────────
 info "Running database migrations..."
 sudo -u "$RUN_USER" .venv/bin/alembic upgrade head
 
@@ -68,35 +77,45 @@ info "Seeding news sources..."
 sudo -u "$RUN_USER" .venv/bin/python -m backend.seeds.sources
 
 # ── Frontend build ───────────────────────────────────────────────────────────
-info "Building Vue frontend..."
-cd "$APP_DIR/frontend"
-sudo -u "$RUN_USER" npm install
+info "Building frontend..."
+cd "$INSTALL_DIR/frontend"
+sudo -u "$RUN_USER" npm install --no-fund --no-audit
 sudo -u "$RUN_USER" npm run build
 
 # ── systemd service ──────────────────────────────────────────────────────────
 info "Installing systemd service..."
-# Stamp the real username into the service file
-sed "s/User=mednews/User=$RUN_USER/; s/Group=mednews/Group=$RUN_USER/" \
-    "$APP_DIR/deploy/mednews.service" > /etc/systemd/system/mednews.service
+cat > /etc/systemd/system/mednews.service <<EOF
+[Unit]
+Description=MedNews
+After=network.target
+
+[Service]
+Type=simple
+User=$RUN_USER
+WorkingDirectory=$INSTALL_DIR
+EnvironmentFile=$INSTALL_DIR/.env
+Environment=PORT=$PORT
+ExecStart=$INSTALL_DIR/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 systemctl daemon-reload
 systemctl enable mednews
 systemctl restart mednews
-systemctl --no-pager status mednews || warn "Check: journalctl -u mednews"
-
-# ── nginx ────────────────────────────────────────────────────────────────────
-info "Configuring nginx..."
-cp "$APP_DIR/deploy/nginx.conf" /etc/nginx/sites-available/mednews
-rm -f /etc/nginx/sites-enabled/default
-ln -sf /etc/nginx/sites-available/mednews /etc/nginx/sites-enabled/mednews
-nginx -t || error "nginx config invalid. Check $APP_DIR/deploy/nginx.conf"
-systemctl enable nginx
-systemctl restart nginx
+sleep 2
+systemctl --no-pager status mednews
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 SERVER_IP=$(hostname -I | awk '{print $1}')
-info "========================================================"
-info " MedNews is live!"
-info " Open: http://$SERVER_IP"
-info " Logs: journalctl -u mednews -f"
-info " Update: cd $APP_DIR && git pull && sudo bash deploy/setup.sh"
-info "========================================================"
+info "────────────────────────────────────────────────────────"
+info " MedNews is running at http://$SERVER_IP:$PORT"
+info " Logs:   journalctl -u mednews -f"
+info " Stop:   sudo systemctl stop mednews"
+info " Update: cd $INSTALL_DIR && git pull && sudo systemctl restart mednews"
+info "────────────────────────────────────────────────────────"
