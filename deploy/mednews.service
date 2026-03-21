@@ -7,6 +7,7 @@ Documentation=https://github.com/yourorg/mednews
 Type=simple
 User=mednews
 Group=mednews
+# Note: setup.sh replaces User/Group above with the real username at install time
 WorkingDirectory=/opt/mednews
 EnvironmentFile=/opt/mednews/.env
 Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/mednews/.playwright-browsers
