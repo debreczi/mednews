@@ -94,8 +94,14 @@ sudo -u "$APP_USER" .venv/bin/pip install -r requirements.txt --quiet
 
 info "Installing Playwright system dependencies..."
 .venv/bin/playwright install-deps chromium
-info "Installing Playwright browsers for user $APP_USER..."
-sudo -u "$APP_USER" .venv/bin/playwright install chromium
+info "Installing Playwright browsers..."
+mkdir -p "$APP_DIR/.playwright-browsers"
+chown "$APP_USER:$APP_USER" "$APP_DIR/.playwright-browsers"
+PLAYWRIGHT_BROWSERS_PATH="$APP_DIR/.playwright-browsers" \
+    sudo -u "$APP_USER" \
+    PLAYWRIGHT_BROWSERS_PATH="$APP_DIR/.playwright-browsers" \
+    HOME="$APP_DIR" \
+    .venv/bin/playwright install chromium
 
 # ── Environment file ────────────────────────────────────────────────────────────
 

@@ -9,6 +9,8 @@ User=mednews
 Group=mednews
 WorkingDirectory=/opt/mednews
 EnvironmentFile=/opt/mednews/.env
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/mednews/.playwright-browsers
+Environment=HOME=/opt/mednews
 ExecStart=/opt/mednews/.venv/bin/uvicorn backend.main:app \
     --host 127.0.0.1 \
     --port 8000 \
