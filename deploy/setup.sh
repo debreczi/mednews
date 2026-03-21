@@ -90,7 +90,7 @@ rm -f /etc/nginx/sites-enabled/default
 ln -sf /etc/nginx/sites-available/mednews /etc/nginx/sites-enabled/mednews
 nginx -t || error "nginx config invalid. Check $APP_DIR/deploy/nginx.conf"
 systemctl enable nginx
-systemctl reload nginx
+systemctl restart nginx
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 SERVER_IP=$(hostname -I | awk '{print $1}')
