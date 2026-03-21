@@ -1,54 +1,25 @@
-"""CrawlerRunner bridge — runs all active Scrapy spiders inside the FastAPI process.
+"""Async RSS runner — replaces Scrapy for all RSS sources.
 
-Note: Scrapy uses Twisted's reactor. We use CrawlerRunner (not CrawlerProcess) so it
-can share the asyncio event loop configured in scrapy settings via TWISTED_REACTOR.
-Actual per-spider stats are tracked by DatabasePipeline; runner returns aggregate totals.
+Fetches each feed with feedparser (via thread executor), scores and
+enriches with the existing service layer, then persists to SQLite.
+No Twisted, no reactor, no Playwright for RSS feeds.
 """
-# Must install the asyncio reactor before any other Twisted/Scrapy imports
-try:
-    from twisted.internet import asyncioreactor
-    asyncioreactor.install()
-except Exception:
-    pass  # Already installed
-
-import importlib
-import inspect
+import asyncio
 import logging
-import pkgutil
-from pathlib import Path
-from typing import Any
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+
+import feedparser
 
 logger = logging.getLogger(__name__)
 
-
-def _find_spider_class(spider_name: str):
-    """Locate a Scrapy spider class by its `name` attribute."""
-    import backend.scraper.spiders as spiders_pkg
-    from .spiders.base_spider import BaseSpider
-
-    for _, modname, _ in pkgutil.walk_packages(
-        path=spiders_pkg.__path__,
-        prefix=spiders_pkg.__name__ + ".",
-        onerror=lambda x: None,
-    ):
-        try:
-            mod = importlib.import_module(modname)
-            for _, obj in inspect.getmembers(mod, inspect.isclass):
-                if (
-                    issubclass(obj, BaseSpider)
-                    and obj is not BaseSpider
-                    and getattr(obj, "name", None) == spider_name
-                ):
-                    return obj
-        except Exception:
-            pass
-    return None
+# Max concurrent feed fetches
+_SEMAPHORE = asyncio.Semaphore(8)
 
 
-async def run_all_spiders() -> dict[str, Any]:
-    """Run all active sources through their configured spiders.
+async def run_all_spiders() -> dict:
+    """Fetch all active RSS sources, score, enrich, and save articles.
 
-    Groups sources by spider_name, then runs each spider class once per source URL.
     Returns aggregate stats: {"found": N, "saved": N, "errors": N}
     """
     from ..database import SessionLocal
@@ -62,71 +33,160 @@ async def run_all_spiders() -> dict[str, Any]:
         logger.warning("[Runner] No active sources found")
         return {"found": 0, "saved": 0, "errors": 0}
 
-    # Group sources by spider_name
-    by_spider: dict[str, list] = {}
-    for src in sources:
-        by_spider.setdefault(src.spider_name, []).append(src)
+    # Load existing URLs to skip duplicates across all sources
+    existing_urls = _load_existing_urls()
 
+    logger.info(f"[Runner] Fetching {len(sources)} RSS sources...")
+
+    tasks = [_fetch_source(src, existing_urls) for src in sources]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    raw_articles = []
     stats = {"found": 0, "saved": 0, "errors": 0}
 
-    for spider_name, srcs in by_spider.items():
-        spider_cls = _find_spider_class(spider_name)
-        if not spider_cls:
-            logger.warning(f"[Runner] No spider class for name '{spider_name}' — skipping {len(srcs)} sources")
-            stats["errors"] += len(srcs)
-            continue
+    for src, result in zip(sources, results):
+        if isinstance(result, Exception):
+            logger.error(f"[Runner] {src.name} fetch failed: {result}")
+            stats["errors"] += 1
+        else:
+            stats["found"] += len(result)
+            raw_articles.extend(result)
 
-        for src in srcs:
-            try:
-                result = await _crawl_source(spider_cls, src)
-                stats["found"] += result.get("found", 0)
-                stats["saved"] += result.get("saved", 0)
-            except Exception as e:
-                stats["errors"] += 1
-                logger.error(f"[Runner] {spider_name} on {src.url} failed: {e}")
+    if not raw_articles:
+        logger.info("[Runner] No new articles found")
+        return stats
+
+    logger.info(f"[Runner] {len(raw_articles)} new articles — scoring...")
+    saved = await _score_enrich_save(raw_articles)
+    stats["saved"] = saved
 
     logger.info(f"[Runner] Run complete: {stats}")
     return stats
 
 
-async def _crawl_source(spider_cls, source) -> dict[str, Any]:
-    """Run one spider instance for one source using CrawlerRunner + asyncio bridge."""
-    from scrapy.crawler import CrawlerRunner
-    from scrapy.utils.project import get_project_settings
-    import asyncio
-
-    import os
-    os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "backend.scraper.settings")
-    # Point Playwright to browsers installed during setup (no home dir needed)
-    app_dir = str(Path(__file__).parent.parent.parent)
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", f"{app_dir}/.playwright-browsers")
-    settings = get_project_settings()
-    runner = CrawlerRunner(settings)
-
-    # CrawlerRunner returns a Deferred; wrap it for asyncio
-    deferred = runner.crawl(spider_cls, url=source.url, source_id=source.id)
-
-    # Convert Twisted Deferred to asyncio Future
-    loop = asyncio.get_event_loop()
-    future: asyncio.Future = loop.create_future()
-
-    def on_success(result):
-        if not future.done():
-            loop.call_soon_threadsafe(future.set_result, result)
-
-    def on_error(failure):
-        if not future.done():
-            loop.call_soon_threadsafe(future.set_exception, Exception(str(failure)))
-
-    deferred.addCallback(on_success)
-    deferred.addErrback(on_error)
-
+def _load_existing_urls() -> set:
+    from ..database import SessionLocal
+    from ..models.article import Article
+    from sqlalchemy import select
     try:
-        await asyncio.wait_for(future, timeout=300)  # 5 minute timeout per source
-    except asyncio.TimeoutError:
-        logger.warning(f"[Runner] Spider timeout on {source.url}")
+        with SessionLocal() as db:
+            return set(db.scalars(select(Article.url)).all())
     except Exception as e:
-        logger.error(f"[Runner] Spider error on {source.url}: {e}")
+        logger.warning(f"[Runner] Could not load existing URLs: {e}")
+        return set()
 
-    # Stats are tracked by DatabasePipeline; return zeros here
-    return {"found": 0, "saved": 0}
+
+async def _fetch_source(source, existing_urls: set) -> list:
+    """Fetch one RSS feed and return list of new article dicts."""
+    async with _SEMAPHORE:
+        loop = asyncio.get_event_loop()
+        try:
+            feed = await loop.run_in_executor(None, feedparser.parse, source.url)
+        except Exception as e:
+            raise RuntimeError(f"feedparser failed: {e}") from e
+
+    articles = []
+    for entry in feed.entries:
+        link = entry.get("link", "").strip()
+        title = entry.get("title", "").strip()
+        if not link or not title or link in existing_urls:
+            continue
+
+        existing_urls.add(link)  # prevent duplicates within this run
+
+        # Parse publish date
+        date_published = None
+        pub = entry.get("published") or entry.get("updated")
+        if pub:
+            try:
+                date_published = parsedate_to_datetime(pub)
+            except Exception:
+                pass
+
+        # Extract image
+        image_url = None
+        if hasattr(entry, "media_thumbnail") and entry.media_thumbnail:
+            image_url = entry.media_thumbnail[0].get("url")
+        elif hasattr(entry, "enclosures") and entry.enclosures:
+            for enc in entry.enclosures:
+                if enc.get("type", "").startswith("image/"):
+                    image_url = enc.get("url")
+                    break
+
+        articles.append({
+            "url": link,
+            "original_title": title,
+            "image_url": image_url,
+            "date_published": date_published,
+            "date_collected": datetime.now(timezone.utc),
+            "source_id": source.id,
+            "source_text": source.name,
+            "relevance_score": 0.0,
+            "is_tragic": False,
+            "enrichment_status": "pending",
+        })
+
+    return articles
+
+
+async def _score_enrich_save(articles: list) -> int:
+    """Score, filter, enrich, and persist articles. Returns count saved."""
+    from ..services.scorer import score_and_filter
+    from ..services.enrichment import enrich_articles
+    from ..config import settings
+    from ..database import SessionLocal
+    from ..models.article import Article
+    from sqlalchemy.exc import IntegrityError
+
+    # Score and filter
+    scoreable = [{"original_title": a["original_title"], "_raw": a} for a in articles]
+    scored = await score_and_filter(scoreable, settings.relevance_threshold)
+
+    if not scored:
+        logger.info("[Runner] No articles passed relevance threshold")
+        return 0
+
+    logger.info(f"[Runner] {len(scored)} articles passed scoring — enriching...")
+
+    # Re-attach raw article data
+    for s in scored:
+        s["_raw"]["relevance_score"] = s["relevance_score"]
+
+    to_enrich = [{"original_title": s["original_title"], "_raw": s["_raw"]} for s in scored]
+    enriched = await enrich_articles(to_enrich)
+
+    # Save to DB
+    saved = 0
+    with SessionLocal() as db:
+        for item in enriched:
+            raw = item.pop("_raw", {})
+            raw.update({k: item.get(k) for k in
+                        ("mednews_title", "summary", "link_text", "is_tragic", "enrichment_status")
+                        if k in item})
+            # Remove internal keys
+            raw.pop("_item", None)
+
+            article = Article(
+                url=raw["url"],
+                original_title=raw["original_title"],
+                mednews_title=raw.get("mednews_title"),
+                summary=raw.get("summary"),
+                link_text=raw.get("link_text"),
+                source_text=raw.get("source_text"),
+                image_url=raw.get("image_url"),
+                date_collected=raw.get("date_collected"),
+                date_published=raw.get("date_published"),
+                relevance_score=raw.get("relevance_score", 0.0),
+                is_tragic=raw.get("is_tragic", False),
+                enrichment_status=raw.get("enrichment_status", "complete"),
+                source_id=raw.get("source_id"),
+            )
+            try:
+                db.add(article)
+                db.commit()
+                saved += 1
+            except IntegrityError:
+                db.rollback()
+
+    logger.info(f"[Runner] Saved {saved} articles")
+    return saved
