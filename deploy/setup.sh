@@ -6,7 +6,7 @@ set -euo pipefail
 
 APP_DIR="/opt/mednews"
 APP_USER="mednews"
-PYTHON="python3.11"
+PYTHON="python3"
 NODE_VERSION="20"
 
 # ── Colors ──────────────────────────────────────────────────────────────────────
@@ -44,19 +44,17 @@ apt-get install -y --no-install-recommends \
     nginx \
     sqlite3
 
-# ── Python 3.11 ─────────────────────────────────────────────────────────────────
+# ── Python (Ubuntu 24 ships with 3.12) ──────────────────────────────────────────
 
-info "Installing Python 3.11..."
-add-apt-repository -y ppa:deadsnakes/ppa
-apt-get update -qq
+info "Installing Python 3 + venv..."
 apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
-    python3.11-dev \
+    python3 \
+    python3-venv \
+    python3-dev \
     python3-pip
 
 # Verify
-$PYTHON --version || error "Python 3.11 installation failed."
+$PYTHON --version || error "Python 3 installation failed."
 
 # ── Node 20 (via NodeSource) ────────────────────────────────────────────────────
 
