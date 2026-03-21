@@ -138,10 +138,10 @@ sudo -u "$APP_USER" .venv/bin/python -m backend.seeds.sources
 
 info "Installing frontend dependencies..."
 cd "$APP_DIR/frontend"
-sudo -u "$APP_USER" npm install --silent
+sudo -u "$APP_USER" HOME="$APP_DIR" npm install
 
 info "Building Vue frontend for production..."
-sudo -u "$APP_USER" npm run build
+sudo -u "$APP_USER" HOME="$APP_DIR" npm run build
 
 # ── systemd service ─────────────────────────────────────────────────────────────
 
