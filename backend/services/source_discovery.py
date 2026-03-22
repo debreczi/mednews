@@ -1,6 +1,6 @@
-"""AI-powered source discovery using xAI Grok.
+"""AI-powered source discovery using LLM API.
 
-Weekly job that asks Grok to identify new Hungarian medical news sources
+Weekly job that asks the LLM to identify new Hungarian medical news sources
 not already in our database, then adds them.
 """
 import logging
@@ -32,7 +32,7 @@ Válaszolj KIZÁRÓLAG valid JSON tömbként:
 
 
 async def discover_new_sources(existing_urls: list[str]) -> list[dict]:
-    """Use Grok to find new Hungarian medical news sources not in our DB."""
+    """Use LLM to find new Hungarian medical news sources not in our DB."""
     from .enrichment import _call_llm, _extract_json, DEFAULT_MODEL
 
     urls_sample = "\n".join(existing_urls[:30])

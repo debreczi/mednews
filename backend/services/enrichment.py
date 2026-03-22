@@ -1,4 +1,4 @@
-"""xAI Grok enrichment service.
+"""LLM enrichment service (OpenAI-compatible API).
 
 Enriches articles with AI-generated Hungarian content:
 - mednews_title: humorous/cynical title (max 80 chars)

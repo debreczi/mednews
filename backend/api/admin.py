@@ -42,7 +42,7 @@ async def re_enrich(
     ),
     db: Session = Depends(get_db),
 ):
-    """Re-run Grok enrichment on existing articles in the database."""
+    """Re-run LLM enrichment on existing articles in the database."""
     stmt = select(Article)
     if status == "failed":
         stmt = stmt.where(Article.enrichment_status == "failed")

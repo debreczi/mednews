@@ -1,4 +1,4 @@
-"""Article relevance scoring via xAI Grok API.
+"""Article relevance scoring via LLM API.
 
 Scores articles 1-10 for relevance to Hungarian medical IT professionals.
 Batch processes to minimise API calls.
