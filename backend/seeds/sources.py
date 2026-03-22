@@ -81,6 +81,17 @@ SOURCES = [
     {"name": "Qubit Tudomány RSS", "url": "https://qubit.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
     {"name": "Blikk RSS", "url": "https://www.blikk.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
 
+    # ── Hungarian Official / Legal ──────────────────────────────────────
+    {"name": "Magyar Közlöny RSS", "url": "https://magyarkozlony.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+
+    # ── Hungarian Private Healthcare Institutions (verified RSS) ─────
+    {"name": "Budai Egészségközpont RSS", "url": "https://bhc.hu/rss.xml", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+    {"name": "MOM Szent Magdolna Magánkórház RSS", "url": "https://szentmagdolna.com/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+    {"name": "Emineo Magánkórház RSS", "url": "https://emineo.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+    {"name": "Wáberer Medical Center RSS", "url": "https://wmc.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+    {"name": "Doktor24 Blog RSS", "url": "https://doktor24.hu/blog/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+    {"name": "Medicover RSS", "url": "https://medicover.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+
     # ── EU / European Health & Digital Health (verified RSS) ─────────────
     {"name": "Euronews Health RSS", "url": "https://www.euronews.com/rss?level=vertical&name=health", "type": "rss", "spider_name": "rss_spider", "region": "EU"},
     {"name": "Clinical Trials Arena RSS", "url": "https://www.clinicaltrialsarena.com/feed", "type": "rss", "spider_name": "rss_spider", "region": "EU"},
