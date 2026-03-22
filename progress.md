@@ -1,7 +1,7 @@
 # MedNews Build Progress
 
-Last Updated: 2026-03-21 | By: Sonnet Orchestrator + Opus Review
-Current Phase: 6 | Overall Status: IN_PROGRESS (pending Ubuntu 24 manual verification)
+Last Updated: 2026-03-22 | By: Opus 4.6
+Current Phase: 7 | Overall Status: IN_PROGRESS
 
 ---
 
@@ -15,7 +15,8 @@ Current Phase: 6 | Overall Status: IN_PROGRESS (pending Ubuntu 24 manual verific
 | 3     | AI Enrichment           | COMPLETE    | 2026-03-21 | 2026-03-21|       |
 | 4     | Scheduler + Admin API   | COMPLETE    | 2026-03-21 | 2026-03-21|       |
 | 5     | Frontend SPA            | COMPLETE    | 2026-03-21 | 2026-03-21| Vitest 8/8 |
-| 6     | Integration + Deploy    | IN_PROGRESS | 2026-03-21 | —         |       |
+| 6     | Integration + Deploy    | IN_PROGRESS | 2026-03-21 | —         | AC-14, AC-15 pending manual verify |
+| 7     | Source Expansion + Twitter | IN_PROGRESS | 2026-03-22 | —      | 102 sources, Twitter v2 API |
 
 ---
 
@@ -142,12 +143,45 @@ Current Phase: 6 | Overall Status: IN_PROGRESS (pending Ubuntu 24 manual verific
 | 2026-03-21 | Opus   | —    | Final AC review — found AC-4, AC-10 missing tests | COMPLETE |
 | 2026-03-21 | Haiku  | —    | Added AC-4 duplicate test + AC-10 perf test       | COMPLETE |
 | 2026-03-21 | Sonnet | —    | Full test suite 56/56 passing; progress.md update | COMPLETE |
+| 2026-03-22 | Opus   | 7.1  | Researched 200+ sources across 5 categories       | COMPLETE |
+| 2026-03-22 | Opus   | 7.2  | Added 26 verified RSS feeds (82→102 total)         | COMPLETE |
+| 2026-03-22 | Opus   | 7.3  | Added TWITTER_BEARER_TOKEN to config               | COMPLETE |
+| 2026-03-22 | Opus   | 7.4  | Built async Twitter v2 fetcher with URL extraction | COMPLETE |
+| 2026-03-22 | Opus   | 7.5  | Added 20 Twitter/X sources to seed file            | COMPLETE |
+| 2026-03-22 | Opus   | 7.6  | FTS5 triggers + startup rebuild                    | COMPLETE |
+| 2026-03-22 | Opus   | 7.7  | Search: Enter + 1s debounce auto-search            | COMPLETE |
+| 2026-03-22 | Opus   | 7.8  | Date descending sort with fallback                 | COMPLETE |
+| 2026-03-22 | Opus   | 7.9  | Region filter buttons (HU/EU/INTL)                 | COMPLETE |
+| 2026-03-22 | Opus   | 7.10 | og:image fallback + /admin/backfill-images          | COMPLETE |
+| 2026-03-22 | Opus   | 7.12 | Updated README, .env.example, progress.md          | COMPLETE |
+
+---
+
+## Phase 7 Tasks — Source Expansion + Twitter Integration
+
+| Task ID | Description                                           | Agent  | Status      | Blockers |
+|---------|-------------------------------------------------------|--------|-------------|----------|
+| 7.1     | Research and verify 100+ new RSS sources              | Opus   | COMPLETE    | —        |
+| 7.2     | Add 26 verified RSS feeds to seed file                | Opus   | COMPLETE    | —        |
+| 7.3     | Add Twitter/X API config and bearer token support     | Opus   | COMPLETE    | —        |
+| 7.4     | Implement async Twitter v2 fetcher in runner.py       | Opus   | COMPLETE    | —        |
+| 7.5     | Add 20 Twitter/X sources (18 intl + 2 HU)            | Opus   | COMPLETE    | —        |
+| 7.6     | Add FTS5 triggers + startup rebuild for search sync   | Opus   | COMPLETE    | —        |
+| 7.7     | Search: Enter key trigger + 1s debounce auto-search   | Opus   | COMPLETE    | —        |
+| 7.8     | Sort articles by date_published descending            | Opus   | COMPLETE    | —        |
+| 7.9     | Region filter buttons (HU / EU / INTL)                | Opus   | COMPLETE    | —        |
+| 7.10    | og:image fallback + backfill endpoint                 | Opus   | COMPLETE    | —        |
+| 7.11    | LLM prompt: bullet-point summaries, Hungarian-only    | Opus   | COMPLETE    | —        |
+| 7.12    | Update README.md + .env.example + progress.md         | Opus   | COMPLETE    | —        |
+| 7.13    | Activate Twitter API (user needs Basic tier credits)  | User   | PENDING     | Billing  |
+
+**Phase 7 Gate**: 100+ sources seeded, Twitter integration code ready, pending API credits activation.
 
 ---
 
 ## Blocked Items
 
-— none —
+- **Twitter API**: Account returns 402 CreditsDepleted. User needs to upgrade to Basic tier ($100/mo) at developer.x.com.
 
 ---
 
@@ -155,4 +189,5 @@ Current Phase: 6 | Overall Status: IN_PROGRESS (pending Ubuntu 24 manual verific
 
 - **User (manual)**: Task 6.6 — run `sudo bash deploy/setup.sh` on a clean Ubuntu 24 LTS instance; verify AC-14
 - **User (manual)**: Task 6.7 — kill uvicorn process and confirm systemd restarts it within 5 seconds; verify AC-15
-- **Sonnet**: After user confirms AC-14 + AC-15, mark Phase 6 COMPLETE — project ships
+- **User**: Task 7.13 — upgrade Twitter API to Basic tier to activate 20 Twitter/X sources
+- **Future**: Add LinkedIn API scraping, Nitter RSS bridge as free Twitter alternative

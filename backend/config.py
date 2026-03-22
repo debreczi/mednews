@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Scraping
     relevance_threshold: float = 6.0
 
+    # Twitter / X API
+    twitter_bearer_token: str = ""
+
     # Database
     db_path: str = "./mednews.db"
 

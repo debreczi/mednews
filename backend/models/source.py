@@ -10,7 +10,7 @@ class Source(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[str] = mapped_column(String, nullable=False)
-    type: Mapped[str] = mapped_column(String, nullable=False)  # portal | rss | social | international
+    type: Mapped[str] = mapped_column(String, nullable=False)  # portal | rss | social | international | twitter
     region: Mapped[str] = mapped_column(String(2), nullable=False, default="HU")  # HU | EU | US
     spider_name: Mapped[str] = mapped_column(String, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

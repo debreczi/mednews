@@ -1,6 +1,6 @@
 # MedNews
 
-MedNews is a medical news aggregator that scrapes 50+ Hungarian and international medical/pharmaceutical news sources daily, enriches each article with Groq LLM (relevance scoring, AI-generated title, tragic-event detection), and serves them through a FastAPI backend and a Vue 3 SPA frontend with infinite scroll, full-text search, date filters, and social sharing.
+MedNews is a medical news aggregator that monitors 100+ Hungarian and international medical/pharmaceutical news sources (RSS feeds, Twitter/X accounts), enriches each article with LLM-powered scoring and Hungarian-language satirical summaries, and serves them through a FastAPI backend and a Vue 3 SPA frontend with infinite scroll, full-text search, date/region filters, and social sharing.
 
 ---
 
@@ -10,8 +10,8 @@ MedNews is a medical news aggregator that scrapes 50+ Hungarian and internationa
 |-------------|---------|-------|
 | Python | 3.11+ | Earlier versions not tested |
 | Node.js | 20+ | For the Vue frontend |
-| Playwright | latest | Chromium browser for JS-rendered sites |
-| Groq API key | — | Free tier available at console.groq.com |
+| LLM API key | — | OpenAI-compatible endpoint (Azure AI Foundry, OpenAI, etc.) |
+| Twitter Bearer Token | — | Optional — for Twitter/X source monitoring (Basic tier, $100/mo) |
 
 ---
 
@@ -33,7 +33,8 @@ cp .env.example .env
 Open `.env` and set at minimum:
 
 ```
-GROQ_API_KEY=your_groq_api_key_here
+LLM_API_KEY=your_llm_api_key_here
+LLM_BASE_URL=https://your-endpoint.openai.azure.com/v1
 ADMIN_API_KEY=some_strong_random_string
 VITE_ADMIN_API_KEY=some_strong_random_string
 ```
@@ -60,13 +61,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 5. Install Playwright browser
-
-```bash
-playwright install chromium
-```
-
-### 6. Initialize the database
+### 5. Initialize the database
 
 Run Alembic migrations (recommended):
 ```bash
@@ -78,13 +73,15 @@ Or use the database module directly:
 python -m backend.database
 ```
 
-### 7. Seed news sources
+### 6. Seed news sources
 
 ```bash
 python -m backend.seeds.sources
 ```
 
-### 8. Start the backend
+This seeds 100+ sources (Hungarian medical portals, RSS feeds, Twitter/X accounts, EU/US health IT feeds).
+
+### 7. Start the backend
 
 ```bash
 uvicorn backend.main:app --reload
@@ -92,7 +89,7 @@ uvicorn backend.main:app --reload
 
 The API will be available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
 
-### 9. Start the frontend (separate terminal)
+### 8. Start the frontend (separate terminal)
 
 ```bash
 cd frontend
@@ -122,7 +119,7 @@ The `deploy/setup.sh` script bootstraps a clean Ubuntu 24 LTS server end-to-end.
    sudo bash /opt/mednews/deploy/setup.sh
    ```
 
-   The script will pause and ask you to edit `/opt/mednews/.env` before continuing. Set `GROQ_API_KEY` and `ADMIN_API_KEY` at minimum.
+   The script will pause and ask you to edit `/opt/mednews/.env` before continuing. Set `LLM_API_KEY`, `LLM_BASE_URL`, and `ADMIN_API_KEY` at minimum.
 
 3. After setup completes, update the nginx `server_name` directive:
    ```bash
@@ -141,9 +138,8 @@ What `setup.sh` does automatically:
 - Installs Python 3.11, Node 20, nginx
 - Creates a `mednews` system user
 - Sets up the Python virtual environment and installs dependencies
-- Installs Playwright + Chromium
 - Runs `alembic upgrade head`
-- Seeds news sources
+- Seeds 100+ news sources
 - Builds the Vue frontend (`npm run build`)
 - Installs and enables the `mednews` systemd service
 - Configures nginx as a reverse proxy
@@ -154,8 +150,11 @@ What `setup.sh` does automatically:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GROQ_API_KEY` | Yes | — | Groq API key for LLM enrichment (groq.com) |
+| `LLM_API_KEY` | Yes | — | API key for OpenAI-compatible LLM endpoint |
+| `LLM_BASE_URL` | Yes | — | Base URL for LLM API (e.g. Azure AI Foundry endpoint) |
+| `LLM_MODEL` | No | `gpt-5.4-mini` | Model name for scoring and enrichment |
 | `ADMIN_API_KEY` | Yes | `change_me...` | Secret key for `X-Admin-Key` header on admin endpoints |
+| `TWITTER_BEARER_TOKEN` | No | — | Twitter/X API Bearer token for monitoring X accounts |
 | `RELEVANCE_THRESHOLD` | No | `6` | Minimum relevance score (1–10) to save an article |
 | `DB_PATH` | No | `./mednews.db` | Path to the SQLite database file |
 | `HOST` | No | `0.0.0.0` | Backend bind host |
@@ -221,29 +220,55 @@ make frontend-test
 ```
 mednews/
 ├── backend/
-│   ├── main.py          # FastAPI app entry point
-│   ├── database.py      # SQLAlchemy engine + session factory
-│   ├── models.py        # ORM models (Article, Source, ...)
-│   ├── routers/         # API route handlers (/articles, /search, /admin, /health)
-│   ├── scrapers/        # Spider classes (50+ sources)
-│   ├── enrichment/      # Groq LLM integration (scoring, title, tragic detection)
-│   ├── scheduler/       # APScheduler jobs (daily scrape, weekly discovery)
-│   └── seeds/           # Database seed scripts
+│   ├── main.py            # FastAPI app entry point
+│   ├── config.py          # Pydantic settings (env vars)
+│   ├── database.py        # SQLAlchemy engine + FTS5 triggers
+│   ├── models/            # ORM models (Article, Source, AuditLog)
+│   ├── api/               # Route handlers (/articles, /search, /admin, /health)
+│   ├── scraper/
+│   │   └── runner.py      # Async RSS + Twitter/X fetcher
+│   ├── services/
+│   │   ├── scorer.py      # LLM relevance scoring (1–10)
+│   │   ├── enrichment.py  # LLM Hungarian title/summary generation
+│   │   └── scheduler.py   # APScheduler (daily scrape 05:00 CET)
+│   ├── schemas/           # Pydantic response schemas
+│   └── seeds/             # Source seed data (100+ sources)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/  # Vue components (ArticleCard, SearchBar, ...)
-│   │   ├── views/       # Page-level views (Home, Article, Admin)
-│   │   └── stores/      # Pinia state management
-│   └── dist/            # Production build output (served by nginx)
+│   │   ├── components/    # Vue components (ArticleCard, AppHeader, ...)
+│   │   ├── composables/   # useSearch, useInfiniteScroll
+│   │   ├── views/         # Home, Article, Admin views
+│   │   └── stores/        # Pinia store (articles, region filter)
+│   └── dist/              # Production build (served by nginx)
 ├── deploy/
-│   ├── setup.sh         # Ubuntu 24 LTS bootstrap script
-│   ├── mednews.service  # systemd unit file
-│   └── nginx.conf       # nginx server block
-├── tests/               # pytest test suite
-├── alembic/             # Database migration scripts
-├── .env.example         # Environment variable template
-└── Makefile             # Developer shortcuts
+│   ├── setup.sh           # Ubuntu 24 LTS bootstrap script
+│   ├── mednews.service    # systemd unit file
+│   └── nginx.conf         # nginx reverse proxy config
+├── tests/                 # pytest test suite
+├── alembic/               # Database migrations
+├── .env.example           # Environment variable template
+└── Makefile               # Developer shortcuts
 ```
+
+### Data Pipeline
+
+```
+RSS Feeds ─┐
+            ├──▶ Async Runner ──▶ LLM Scorer ──▶ LLM Enricher ──▶ SQLite + FTS5
+Twitter/X ─┘      (feedparser)    (relevance     (HU title,       (deduped by URL)
+                   (httpx v2 API)  score 1–10)    bullet summary,
+                                                  tragic detection)
+```
+
+### Source Distribution (102 sources)
+
+| Type | Count | Region | Count |
+|------|-------|--------|-------|
+| RSS feeds | 41 | HU | 54 |
+| Portals | 23 | US | 31 |
+| Twitter/X | 20 | EU | 17 |
+| International | 15 | | |
+| Social | 3 | | |
 
 For full requirements and acceptance criteria, see [PRD.md](PRD.md).
 

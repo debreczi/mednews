@@ -1,8 +1,8 @@
-"""Async RSS runner — replaces Scrapy for all RSS sources.
+"""Async runner — fetches RSS feeds and Twitter/X timelines.
 
 Fetches each feed with feedparser (via thread executor), scores and
 enriches with the existing service layer, then persists to SQLite.
-No Twisted, no reactor, no Playwright for RSS feeds.
+Twitter sources use the v2 API with Bearer token auth.
 """
 import asyncio
 import logging
@@ -48,15 +48,23 @@ async def run_all_spiders() -> dict:
     # Load existing URLs to skip duplicates across all sources
     existing_urls = _load_existing_urls()
 
-    logger.info(f"[Runner] Fetching {len(sources)} RSS sources...")
+    # Split sources by type
+    rss_sources = [s for s in sources if s.type != "twitter"]
+    twitter_sources = [s for s in sources if s.type == "twitter"]
 
-    tasks = [_fetch_source(src, existing_urls) for src in sources]
+    logger.info(f"[Runner] Fetching {len(rss_sources)} RSS + {len(twitter_sources)} Twitter sources...")
+
+    tasks = [_fetch_source(src, existing_urls) for src in rss_sources]
+    if twitter_sources:
+        tasks.extend([_fetch_twitter_source(src, existing_urls) for src in twitter_sources])
+
+    all_sources = rss_sources + twitter_sources
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     raw_articles = []
     stats = {"found": 0, "saved": 0, "errors": 0}
 
-    for src, result in zip(sources, results):
+    for src, result in zip(all_sources, results):
         if isinstance(result, Exception):
             logger.error(f"[Runner] {src.name} fetch failed: {result}")
             stats["errors"] += 1
@@ -164,6 +172,116 @@ async def _fetch_source(source, existing_urls: set) -> list:
         })
 
     return articles
+
+
+async def _fetch_twitter_source(source, existing_urls: set) -> list:
+    """Fetch recent tweets from a Twitter/X account via v2 API.
+
+    The source.url should be like https://x.com/username — we extract the
+    username and call the v2 user tweets endpoint.
+    """
+    from ..config import settings
+
+    token = settings.twitter_bearer_token
+    if not token:
+        raise RuntimeError("TWITTER_BEARER_TOKEN not configured")
+
+    # Extract username from URL (https://x.com/username or https://twitter.com/username)
+    username = source.url.rstrip("/").split("/")[-1].lstrip("@")
+
+    # Use a separate client for Twitter API (longer timeout, custom transport)
+    twitter_client = httpx.AsyncClient(
+        timeout=20, follow_redirects=True,
+        headers={
+            "User-Agent": "MedNews/1.0",
+            "Authorization": f"Bearer {token}",
+        },
+    )
+    _TWITTER_API = "https://api.x.com"
+
+    try:
+        # Step 1: resolve username → user ID
+        async with _SEMAPHORE:
+            user_resp = await twitter_client.get(
+                f"{_TWITTER_API}/2/users/by/username/{username}",
+            )
+        if user_resp.status_code != 200:
+            raise RuntimeError(f"Twitter user lookup failed ({user_resp.status_code}): {user_resp.text[:200]}")
+
+        user_data = user_resp.json().get("data")
+        if not user_data:
+            raise RuntimeError(f"Twitter user @{username} not found")
+        user_id = user_data["id"]
+
+        # Step 2: fetch recent tweets (last 7 days max, up to 10 per account)
+        async with _SEMAPHORE:
+            tweets_resp = await twitter_client.get(
+                f"{_TWITTER_API}/2/users/{user_id}/tweets",
+                params={
+                    "max_results": 10,
+                    "tweet.fields": "created_at,text,entities",
+                    "exclude": "retweets,replies",
+                },
+            )
+        if tweets_resp.status_code != 200:
+            raise RuntimeError(f"Twitter tweets fetch failed ({tweets_resp.status_code}): {tweets_resp.text[:200]}")
+
+        tweets = tweets_resp.json().get("data", [])
+        articles = []
+
+        for tweet in tweets:
+            tweet_url = f"https://x.com/{username}/status/{tweet['id']}"
+            if tweet_url in existing_urls:
+                continue
+            existing_urls.add(tweet_url)
+
+            # Extract first URL from tweet entities (the linked article)
+            article_url = None
+            entities = tweet.get("entities", {})
+            for u in entities.get("urls", []):
+                expanded = u.get("expanded_url", "")
+                # Skip twitter/x.com self-links
+                if "twitter.com" not in expanded and "x.com" not in expanded:
+                    article_url = expanded
+                    break
+
+            # Parse date
+            date_published = None
+            if tweet.get("created_at"):
+                try:
+                    date_published = datetime.fromisoformat(tweet["created_at"].replace("Z", "+00:00"))
+                except Exception:
+                    pass
+
+            # Use linked article URL if available, otherwise the tweet URL
+            url = article_url or tweet_url
+            if url in existing_urls and url != tweet_url:
+                continue
+            existing_urls.add(url)
+
+            # Truncate tweet text to use as title
+            text = tweet.get("text", "").strip()
+            # Remove t.co links from display title
+            title = re.sub(r"https?://t\.co/\S+", "", text).strip()
+            if not title:
+                continue
+
+            articles.append({
+                "url": url,
+                "original_title": title[:300],
+                "image_url": None,
+                "date_published": date_published,
+                "date_collected": datetime.now(timezone.utc),
+                "source_id": source.id,
+                "source_text": f"@{username}",
+                "relevance_score": 0.0,
+                "is_tragic": False,
+                "enrichment_status": "pending",
+            })
+
+        return articles
+    finally:
+        await twitter_client.aclose()
 
 
 async def _score_enrich_save(articles: list) -> int:
