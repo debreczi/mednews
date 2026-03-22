@@ -43,7 +43,7 @@ async def re_enrich(
     db: Session = Depends(get_db),
 ):
     """Re-run LLM enrichment on existing articles in the database."""
-    stmt = select(Article)
+    stmt = select(Article).order_by(Article.id.desc())
     if status == "failed":
         stmt = stmt.where(Article.enrichment_status == "failed")
     elif status == "pending":

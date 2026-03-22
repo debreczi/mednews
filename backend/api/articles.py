@@ -1,27 +1,48 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, func
 
 from ..database import get_db
 from ..models.article import Article
+from ..models.source import Source
 from ..schemas.article import ArticleOut, PaginatedArticles
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
 PAGE_SIZE = 25
+HU_RATIO = 0.7  # 70% Hungarian articles
 
 
 @router.get("", response_model=PaginatedArticles)
 def list_articles(after: int | None = None, db: Session = Depends(get_db)):
-    """Return up to 25 articles, cursor-paginated by id descending."""
-    query = select(Article).order_by(Article.id.desc())
-    if after is not None:
-        query = query.where(Article.id < after)
-    query = query.limit(PAGE_SIZE + 1)
+    """Return up to 25 articles with ~70% Hungarian / 30% international mix."""
+    hu_limit = int(PAGE_SIZE * HU_RATIO)       # 17
+    intl_limit = PAGE_SIZE - hu_limit           # 8
 
-    rows = db.scalars(query).all()
-    has_more = len(rows) > PAGE_SIZE
-    items = rows[:PAGE_SIZE]
+    base = select(Article).options(joinedload(Article.source)).order_by(Article.id.desc())
+    if after is not None:
+        base = base.where(Article.id < after)
+
+    # Hungarian articles
+    hu_query = base.join(Source).where(Source.region == "HU").limit(hu_limit + 1)
+    hu_rows = db.scalars(hu_query).unique().all()
+
+    # International articles (EU + US)
+    intl_query = base.join(Source).where(Source.region != "HU").limit(intl_limit + 1)
+    intl_rows = db.scalars(intl_query).unique().all()
+
+    # Merge and sort by id desc
+    combined = sorted(hu_rows[:hu_limit] + intl_rows[:intl_limit], key=lambda a: a.id, reverse=True)
+
+    # If either pool is short, fill from the other
+    if len(combined) < PAGE_SIZE:
+        seen_ids = {a.id for a in combined}
+        fill_query = base.limit(PAGE_SIZE + 1)
+        fill_rows = [a for a in db.scalars(fill_query).unique().all() if a.id not in seen_ids]
+        combined = sorted(combined + fill_rows[:PAGE_SIZE - len(combined)], key=lambda a: a.id, reverse=True)
+
+    has_more = len(hu_rows) > hu_limit or len(intl_rows) > intl_limit
+    items = combined[:PAGE_SIZE]
     next_cursor = items[-1].id if has_more and items else None
     total = db.scalar(select(func.count()).select_from(Article)) or 0
 
@@ -30,7 +51,9 @@ def list_articles(after: int | None = None, db: Session = Depends(get_db)):
 
 @router.get("/{article_id}", response_model=ArticleOut)
 def get_article(article_id: int, db: Session = Depends(get_db)):
-    article = db.get(Article, article_id)
+    article = db.scalars(
+        select(Article).options(joinedload(Article.source)).where(Article.id == article_id)
+    ).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     return article

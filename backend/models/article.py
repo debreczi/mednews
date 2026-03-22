@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
@@ -32,3 +33,7 @@ class Article(Base):
     )
 
     source: Mapped["Source | None"] = relationship("Source", back_populates="articles")
+
+    @hybrid_property
+    def source_region(self) -> str | None:
+        return self.source.region if self.source else None

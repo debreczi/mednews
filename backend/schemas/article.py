@@ -17,6 +17,7 @@ class ArticleOut(BaseModel):
     is_tragic: bool
     enrichment_status: str
     source_id: int | None
+    source_region: str | None = None
 
     model_config = {"from_attributes": True}
 

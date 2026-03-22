@@ -28,6 +28,10 @@
           {{ formatDate(article.date_published || article.date_collected) }}
         </span>
       </div>
+      <!-- Region badge -->
+      <div v-if="regionFlag" class="absolute top-3 right-3">
+        <span class="text-3xl drop-shadow-md" :title="regionLabel">{{ regionFlag }}</span>
+      </div>
     </div>
 
     <!-- Card body -->
@@ -53,19 +57,21 @@
       </div>
 
       <!-- Summary -->
-      <p class="text-text-secondary text-sm leading-relaxed flex-1">
+      <p class="text-text-secondary text-sm leading-relaxed flex-1 whitespace-pre-line">
         {{ article.summary }}
       </p>
 
       <!-- Source link -->
-      <div class="mt-4 pt-3 border-t border-gray-100">
+      <div class="mt-4 pt-3 border-t border-gray-100 text-xs">
+        <span class="text-text-muted">{{ article.link_text || 'Eredeti cikk:' }}</span>
+        {{ ' ' }}
         <a
           :href="article.url"
           target="_blank"
           rel="noopener noreferrer"
-          class="text-accent-teal text-xs hover:text-accent-teal-dark transition-colors underline-offset-2 hover:underline line-clamp-2"
+          class="text-accent-teal hover:text-accent-teal-dark transition-colors underline-offset-2 hover:underline"
         >
-          {{ article.link_text || 'Az eredeti cikk itt olvasható' }}
+          {{ truncatedUrl }}
         </a>
       </div>
 
@@ -83,6 +89,19 @@ const props = defineProps({ article: { type: Object, required: true } })
 const imageError = ref(false)
 
 const starCount = computed(() => Math.min(5, Math.max(1, Math.round(props.article.relevance_score / 2))))
+
+const regionMap = { HU: { flag: '🇭🇺', label: 'Magyar' }, EU: { flag: '🇪🇺', label: 'Európai' }, US: { flag: '🇺🇸', label: 'Amerikai' } }
+const regionInfo = computed(() => regionMap[props.article.source_region] || null)
+const regionFlag = computed(() => regionInfo.value?.flag)
+const regionLabel = computed(() => regionInfo.value?.label)
+
+const truncatedUrl = computed(() => {
+  try {
+    const u = new URL(props.article.url)
+    const path = u.pathname.length > 60 ? u.pathname.slice(0, 60) + '…' : u.pathname
+    return u.hostname + path
+  } catch { return props.article.url?.slice(0, 120) || '' }
+})
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
