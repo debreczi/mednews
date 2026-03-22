@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import select, text
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import case, select, text
 from datetime import date
 
 from ..database import get_db
@@ -32,9 +32,11 @@ def search_articles(
         ids = [row[0] for row in result]
         if not ids:
             return []
-        stmt = select(Article).where(Article.id.in_(ids)).order_by(Article.id.desc())
+        _sort = case((Article.date_published.isnot(None), Article.date_published), else_=Article.date_collected)
+        stmt = select(Article).options(joinedload(Article.source)).where(Article.id.in_(ids)).order_by(_sort.desc())
     else:
-        stmt = select(Article).order_by(Article.id.desc())
+        _sort = case((Article.date_published.isnot(None), Article.date_published), else_=Article.date_collected)
+        stmt = select(Article).options(joinedload(Article.source)).order_by(_sort.desc())
 
     if from_date:
         stmt = stmt.where(Article.date_published >= from_date)

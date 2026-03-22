@@ -21,6 +21,7 @@
           type="search"
           placeholder="Keresés a hírek között..."
           class="w-full px-4 py-2 text-sm text-white placeholder-white/40 rounded-card-sm border border-white/20 focus:outline-none focus:border-accent-teal transition bg-white/10"
+          @keydown.enter="$emit('search')"
         />
       </div>
 
@@ -49,6 +50,8 @@ import { useArticlesStore } from '../stores/articles.js'
 const store = useArticlesStore()
 const searchQuery = defineModel('searchQuery', { default: '' })
 const dateFrom = defineModel('dateFrom', { default: '' })
+
+defineEmits(['search'])
 
 function clearFilters() {
   searchQuery.value = ''

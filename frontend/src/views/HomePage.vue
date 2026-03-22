@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-bg-primary flex flex-col">
-    <AppHeader v-model:searchQuery="search.query.value" v-model:dateFrom="search.dateFrom.value" />
+    <AppHeader v-model:searchQuery="search.query.value" v-model:dateFrom="search.dateFrom.value" @search="search.doSearch" />
 
     <main class="flex-1 max-w-[1100px] mx-auto w-full px-6 py-8">
       <!-- Region filter buttons -->
@@ -38,7 +38,7 @@ import { useArticlesStore } from '../stores/articles.js'
 
 const search = useSearch()
 const store = useArticlesStore()
-const isFiltering = computed(() => !!search.query.value || !!search.dateFrom.value)
+const isFiltering = computed(() => search.results.value.length > 0 || !!search.dateFrom.value)
 
 const regionFilters = [
   { value: null, label: 'Minden hír' },

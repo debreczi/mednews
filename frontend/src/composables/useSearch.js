@@ -6,9 +6,12 @@ export function useSearch() {
   const dateFrom = ref('')
   const results = ref([])
   const searching = ref(false)
-  let debounceTimer = null
 
   async function doSearch() {
+    if (!query.value && !dateFrom.value) {
+      results.value = []
+      return
+    }
     searching.value = true
     try {
       const params = {}
@@ -23,13 +26,17 @@ export function useSearch() {
     }
   }
 
-  watch([query, dateFrom], () => {
+  // Date filter triggers immediately
+  watch(dateFrom, () => doSearch())
+
+  // Auto-search after 3+ chars with 2s debounce; clear when emptied
+  let debounceTimer = null
+  watch(query, (val) => {
     clearTimeout(debounceTimer)
-    if (!query.value && !dateFrom.value) {
-      results.value = []
-      return
+    if (!val) { results.value = []; return }
+    if (val.length >= 3) {
+      debounceTimer = setTimeout(doSearch, 1000)
     }
-    debounceTimer = setTimeout(doSearch, 300)
   })
 
   function clear() {
@@ -38,5 +45,5 @@ export function useSearch() {
     results.value = []
   }
 
-  return { query, dateFrom, results, searching, clear }
+  return { query, dateFrom, results, searching, doSearch, clear }
 }

@@ -39,7 +39,7 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
 
-    # Create FTS5 virtual table for full-text search (idempotent)
+    # Create FTS5 virtual table and sync triggers
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts
@@ -51,4 +51,26 @@ def init_db():
                 content_rowid='id'
             )
         """))
+
+        # Triggers to keep FTS in sync with articles table
+        for trigger in [
+            """CREATE TRIGGER IF NOT EXISTS articles_ai AFTER INSERT ON articles BEGIN
+                INSERT INTO articles_fts(rowid, original_title, mednews_title, summary)
+                VALUES (new.id, new.original_title, new.mednews_title, new.summary);
+            END""",
+            """CREATE TRIGGER IF NOT EXISTS articles_au AFTER UPDATE ON articles BEGIN
+                INSERT INTO articles_fts(articles_fts, rowid, original_title, mednews_title, summary)
+                VALUES ('delete', old.id, old.original_title, old.mednews_title, old.summary);
+                INSERT INTO articles_fts(rowid, original_title, mednews_title, summary)
+                VALUES (new.id, new.original_title, new.mednews_title, new.summary);
+            END""",
+            """CREATE TRIGGER IF NOT EXISTS articles_ad AFTER DELETE ON articles BEGIN
+                INSERT INTO articles_fts(articles_fts, rowid, original_title, mednews_title, summary)
+                VALUES ('delete', old.id, old.original_title, old.mednews_title, old.summary);
+            END""",
+        ]:
+            conn.execute(text(trigger))
+
+        # Rebuild FTS index on startup to ensure consistency
+        conn.execute(text("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')"))
         conn.commit()
