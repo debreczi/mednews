@@ -3,53 +3,25 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from backend.services.enrichment import (
-    is_tragic,
-    enrich_articles,
-    TRAGIC_KEYWORDS,
-)
-
-
-# ── Tragic detection (AC-6) ───────────────────────────────────────────────────
-
-class TestTragicDetection:
-    def test_detects_tragic_keyword_halal(self):
-        assert is_tragic("Két halál az új gyógyszer tesztelése során") is True
-
-    def test_detects_tragic_keyword_elhunyt(self):
-        assert is_tragic("Az orvos elhunyt a műtét közben") is True
-
-    def test_detects_tragic_keyword_tragedy(self):
-        assert is_tragic("Tragédia a kórházban") is True
-
-    def test_not_tragic_normal_article(self):
-        assert is_tragic("Új AI rendszer segíti a diagnosztikát") is False
-
-    def test_not_tragic_empty_string(self):
-        assert is_tragic("") is False
-
-    def test_case_insensitive(self):
-        assert is_tragic("HALÁL a kórházban") is True
-
-    def test_all_keywords_detected(self):
-        for kw in TRAGIC_KEYWORDS:
-            assert is_tragic(f"Cikk {kw} témában") is True, f"Keyword not detected: {kw}"
+from backend.services.enrichment import enrich_articles
 
 
 # ── Enrichment with mocked LLM (AC-5, AC-7) ───────────────────────────────────
 
-MOCK_GROK_RESPONSE = json.dumps([
+MOCK_LLM_RESPONSE = json.dumps([
     {
         "id": 0,
         "mednews_title": "AI felszámolja az orvosi bürokráciát (spoiler: nem)",
-        "summary": "Egy új AI rendszer állítólag megoldja az összes egészségügyi IT problémát. A fejlesztők szerint ez most tényleg működik, ellentétben az előző 47 kísérlettel.",
+        "summary": "Egy új AI rendszer állítólag megoldja az összes egészségügyi IT problémát.",
         "link_text": "Az eredeti cikk itt olvasható:",
+        "is_tragic": False,
     },
     {
         "id": 1,
         "mednews_title": "EESZT megint frissül, mindenki örül (nem)",
-        "summary": "Az EESZT rendszer újabb frissítést kap. A felhasználók lelkesen várják a megszokott leállásokat.",
+        "summary": "Az EESZT rendszer újabb frissítést kap.",
         "link_text": "Ha tényleg érdekel:",
+        "is_tragic": False,
     },
 ])
 
@@ -61,7 +33,7 @@ async def test_enrich_articles_success():
         {"original_title": "New AI system in healthcare"},
         {"original_title": "EESZT system update"},
     ]
-    mock_response = AsyncMock(return_value=MOCK_GROK_RESPONSE)
+    mock_response = AsyncMock(return_value=MOCK_LLM_RESPONSE)
 
     with patch("backend.services.enrichment._call_llm", mock_response):
         result = await enrich_articles(articles)
@@ -86,12 +58,13 @@ async def test_enrichment_fallback_on_failure():
 
 
 @pytest.mark.asyncio
-async def test_tragic_article_flagged():
-    """AC-6: Tragic articles are flagged with is_tragic=True."""
+async def test_tragic_article_flagged_by_llm():
+    """AC-6: LLM determines tragic articles and flags is_tragic=True."""
     articles = [{"original_title": "Halál a kórházban — szomorú esemény"}]
 
     mock_response = AsyncMock(return_value=json.dumps([
-        {"id": 0, "mednews_title": "Szomorú esemény", "summary": "Tisztelettudó összefoglaló.", "link_text": "Eredeti cikk:"}
+        {"id": 0, "mednews_title": "Szomorú esemény", "summary": "Tisztelettudó összefoglaló.",
+         "link_text": "Eredeti cikk:", "is_tragic": True}
     ]))
 
     with patch("backend.services.enrichment._call_llm", mock_response):
@@ -105,7 +78,8 @@ async def test_non_tragic_article_not_flagged():
     articles = [{"original_title": "Új telemedicina platform indul"}]
 
     mock_response = AsyncMock(return_value=json.dumps([
-        {"id": 0, "mednews_title": "Megint telefonálunk orvossal", "summary": "Humoros összefoglaló.", "link_text": "Eredeti:"}
+        {"id": 0, "mednews_title": "Megint telefonálunk orvossal", "summary": "Humoros összefoglaló.",
+         "link_text": "Eredeti:", "is_tragic": False}
     ]))
 
     with patch("backend.services.enrichment._call_llm", mock_response):
@@ -121,7 +95,8 @@ async def test_mednews_title_truncated_to_80_chars():
     articles = [{"original_title": "Short title"}]
 
     mock_response = AsyncMock(return_value=json.dumps([
-        {"id": 0, "mednews_title": long_title, "summary": "Summary.", "link_text": "Link:"}
+        {"id": 0, "mednews_title": long_title, "summary": "Summary.",
+         "link_text": "Link:", "is_tragic": False}
     ]))
 
     with patch("backend.services.enrichment._call_llm", mock_response):
@@ -148,7 +123,8 @@ async def test_retry_then_succeed():
         if call_count < 2:
             raise Exception("Temporary error")
         return json.dumps([
-            {"id": 0, "mednews_title": "Recovered title", "summary": "OK.", "link_text": "Link:"}
+            {"id": 0, "mednews_title": "Recovered title", "summary": "OK.",
+             "link_text": "Link:", "is_tragic": False}
         ])
 
     with patch("backend.services.enrichment._call_llm", flaky_llm):

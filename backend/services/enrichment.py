@@ -2,8 +2,9 @@
 
 Enriches articles with AI-generated Hungarian content:
 - mednews_title: humorous/cynical title (max 80 chars)
-- summary: 2-3 sentence humorous summary (respectful if tragic)
+- summary: 6-10 sentence informative summary with dry humor (respectful if tragic)
 - link_text: Hungarian CTA with original title (max 40 chars)
+- is_tragic: LLM-determined flag for sensitive content
 
 Batch processes articles to minimise API calls.
 Retries up to 3 times on failure; falls back to original_title on final failure.
@@ -22,28 +23,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = settings.llm_model
 
-# Pre-enrichment tragic keyword check — avoids wasting tokens on a detection call
-TRAGIC_KEYWORDS = [
-    "halál", "elhunyt", "meghalt", "tragédia", "elhalálozás",
-    "gyász", "katasztrófa", "áldozat", "súlyos sérülés", "halálos",
-    "merénylet", "tömegszerencsétlenség", "tömeges halál",
-]
-
 BATCH_SIZE = 10
 MAX_RETRIES = 3
 RETRY_DELAY = 2.0  # seconds
 
 
-def is_tragic(text: str) -> bool:
-    """True if the article title/content contains tragic keywords."""
-    lower = text.lower()
-    return any(kw in lower for kw in TRAGIC_KEYWORDS)
-
-
 def _build_enrichment_prompt(articles: list[dict]) -> str:
     """Build the batch enrichment prompt."""
     articles_json = json.dumps(
-        [{"id": a["_idx"], "title": a["original_title"], "tragic": a["_tragic"]}
+        [{"id": a["_idx"], "title": a["original_title"]}
          for a in articles],
         ensure_ascii=False,
         indent=2,
@@ -57,34 +45,47 @@ STÍLUS:
 - A humor a TÉMÁBÓL fakadjon, ne erőltesd bele kívülálló utalásokat (pl. ne emlegesd az EESZT-t ha a cikk nem arról szól, ne írj admin123-at ha nem kiberbiztonsági téma).
 - Fanyar, száraz humor: inkább egy odavetett megjegyzés a mondat végén, mint erőltetett vicc.
 - NE találj ki tényeket, NE adj hozzá hamis információt a humor kedvéért.
-- Ha tragic=true: komoly, tisztelettudó, humor nélkül.
+
+TILOS VICCELNI:
+- Súlyos betegségekkel (rák, Alzheimer, stb.) — ezek a betegek számára nem viccesek.
+- Halállal, halálesetekkel, tragédiákkal, katasztrófákkal.
+- Szenvedéssel, fájdalommal, áldozatokkal.
+Ilyen témáknál a cím legyen informatív és komoly, az összefoglaló tárgyilagos és tisztelettudó. A humor KIZÁRÓLAG technológiai, IT, üzleti, bürokratikus témáknál megengedett.
+
+ÉRZÉKENYSÉG (is_tragic):
+Döntsd el te, hogy a cikk témája érzékeny-e. Ha a cikk halálról, súlyos betegségről, tragédiáról, járványról szól → is_tragic=true. Ha IT, üzlet, szabályozás, technológia → is_tragic=false.
 
 PÉLDÁK:
 
 Eredeti: "Az EESZT rendszer új funkcióval bővül 2026-ban"
 Cím: "Az EESZT végre megtanult egy új trükköt — és ezúttal nem is fagyott le közben"
+is_tragic: false
 Összefoglaló: "Az Elektronikus Egészségügyi Szolgáltatási Tér új modulja lehetővé teszi az orvosok számára a laboreredmények valós idejű megosztását a betegekkel. A fejlesztés három éve volt tervben, ami az egészségügyi IT-ben meglepően gyorsnak számít. A rendszer márciustól éles üzemben működik, és eddig mindössze kétszer kellett újraindítani — ami rekordnak számít."
 
 Eredeti: "Novartis picks up experimental breast cancer therapy for $2B"
-Cím: "A Novartis 2 milliárdért vett mellrákos reménységet — drága bevásárlás"
-Összefoglaló: "A Novartis 2 milliárd dollárért megvásárolta a Synnovation kísérleti mellrák-terápiáját (SNV4818), amely a korai fázisú vizsgálatokban ígéretes eredményeket mutatott HER2-negatív betegeknél. A deal a Novartis onkológiai portfólióját erősíti, és 2027-re várják a III-as fázisú vizsgálatok indulását. Ennyi pénzért már egy kis magyar kórházat is lehetne digitalizálni — de az kevésbé szexi a befektetőknek."
+Cím: "A Novartis 2 milliárdot fizetett egy mellrák elleni gyógymódért — jó befektetés?"
+is_tragic: true
+Összefoglaló: "A Novartis 2 milliárd dollárért megvásárolta a Synnovation kísérleti mellrák-terápiáját (SNV4818), amely a korai fázisú vizsgálatokban ígéretes eredményeket mutatott HER2-negatív betegeknél. A deal a Novartis onkológiai portfólióját erősíti, és 2027-re várják a III-as fázisú vizsgálatok indulását."
 
 Eredeti: "A telemedicina használata 40%-kal nőtt Magyarországon"
 Cím: "A magyarok rájöttek, hogy a pizsamában is lehet orvoshoz menni"
+is_tragic: false
 Összefoglaló: "A KSH legfrissebb adatai szerint a telemedicina igénybevétele 40%-kal emelkedett 2025-höz képest. A háziorvosok egyharmada már rendszeresen használ videókonzultációt, bár az idősebb páciensek körében a \"doktor úr, nem látom a képernyőt\" továbbra is a leggyakoribb panasz. A trend folytatódik, a szoftvercégek pedig dörzsölik a tenyerüket."
 
 Eredeti: "Adatvizualizáció az egészségügyi döntéshozatalban"
 Cím: "Dashboardok a kórházban: végre nem Excelben nézik, ki halt meg"
+is_tragic: false
 Összefoglaló: "A modern adatvizualizációs eszközök (Power BI, Tableau, Superset) egyre nagyobb teret nyernek a magyar kórházi döntéshozatalban. A kórházvezetők most már valós idejű dashboardokon követhetik az ágykihasználtságot, a várólistákat és a műtéti kapacitásokat. A legnagyobb kihívás nem a technológia, hanem az, hogy rávegyék a főorvosokat: ne nyomtassák ki a dashboardot A4-es papírra."
 
 Kaptál {len(articles)} cikket. Minden cikkhez generálj:
-1. "mednews_title": Szellemes, fanyar magyar cím (max 80 karakter). Úgy fogalmazd, ahogy egy magyar kolléga mondaná élőszóban — természetes köznyelv, NEM fordításízű. Ha tragic=true → komoly, tisztelettudó.
-2. "summary": 6-10 mondatos, részletes magyar összefoglaló a fenti stílusban. ELŐSZÖR az érdemi információ (számok, tények, nevek, következmények), UTÁNA fanyar megjegyzés. Az olvasónak NE kelljen az eredetit elolvasnia. Ha tragic=true → tárgyilagos, humor nélkül.
+1. "mednews_title": Szellemes, fanyar magyar cím (max 80 karakter). Úgy fogalmazd, ahogy egy magyar kolléga mondaná élőszóban — természetes köznyelv, NEM fordításízű. Ha érzékeny téma → komoly, informatív cím.
+2. "summary": 6-10 mondatos, részletes magyar összefoglaló a fenti stílusban. ELŐSZÖR az érdemi információ (számok, tények, nevek, következmények), UTÁNA fanyar megjegyzés — DE CSAK ha a téma megengedi. Az olvasónak NE kelljen az eredetit elolvasnia. Ha érzékeny téma → tárgyilagos, humor nélkül.
 3. "link_text": Kontextuális magyar CTA, max 40 karakter. Pl: "Ha tényleg érdekel:", "A hivatalos közlemény itt:", "A részletekért:"
+4. "is_tragic": true ha a téma érzékeny (betegség, halál, tragédia, járvány, szenvedés), false ha nem.
 
 Válaszolj KIZÁRÓLAG valid JSON tömbként, semmi mást ne írj:
 [
-  {{"id": 0, "mednews_title": "...", "summary": "...", "link_text": "..."}},
+  {{"id": 0, "mednews_title": "...", "summary": "...", "link_text": "...", "is_tragic": false}},
   ...
 ]
 
@@ -151,6 +152,7 @@ async def _enrich_batch(batch: list[dict]) -> list[dict]:
                 article["mednews_title"] = (r.get("mednews_title") or article["original_title"])[:80]
                 article["summary"] = r.get("summary") or ""
                 article["link_text"] = (r.get("link_text") or "Az eredeti cikk itt olvasható:")[:40]
+                article["is_tragic"] = r.get("is_tragic", False)
                 article["enrichment_status"] = "complete"
             return batch
         except Exception as e:
@@ -164,6 +166,7 @@ async def _enrich_batch(batch: list[dict]) -> list[dict]:
         article["mednews_title"] = article["original_title"]
         article["summary"] = ""
         article["link_text"] = "Az eredeti cikk itt olvasható:"
+        article["is_tragic"] = False
         article["enrichment_status"] = "failed"
     return batch
 
@@ -173,11 +176,9 @@ async def enrich_articles(articles: list[dict]) -> list[dict]:
     if not articles:
         return articles
 
-    # Tag each article with index and tragic flag
+    # Tag each article with index
     for i, a in enumerate(articles):
         a["_idx"] = i
-        a["_tragic"] = is_tragic(a.get("original_title", "") + " " + a.get("summary", ""))
-        a["is_tragic"] = a["_tragic"]
 
     # Process in batches
     batches = [articles[i:i + BATCH_SIZE] for i in range(0, len(articles), BATCH_SIZE)]
@@ -191,7 +192,6 @@ async def enrich_articles(articles: list[dict]) -> list[dict]:
     # Clean up internal keys
     for a in results:
         a.pop("_idx", None)
-        a.pop("_tragic", None)
 
     logger.info(f"[Enrichment] Enriched {len(results)} articles")
     return results
