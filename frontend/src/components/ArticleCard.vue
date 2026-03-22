@@ -4,7 +4,7 @@
     :class="{ 'border-l-4 border-red-400': article.is_tragic }"
   >
     <!-- Image -->
-    <div class="relative w-48 h-48 flex-shrink-0 bg-gray-100 overflow-hidden">
+    <div class="relative w-48 h-48 flex-shrink-0 self-start bg-gray-100 overflow-hidden">
       <img
         v-if="article.image_url"
         :src="article.image_url"
