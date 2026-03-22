@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-bg-primary flex flex-col">
     <AppHeader v-model:searchQuery="search.query.value" v-model:dateFrom="search.dateFrom.value" />
 
-    <main class="flex-1 max-w-screen-xl mx-auto w-full px-4 sm:px-8 py-8">
+    <main class="flex-1 max-w-[860px] mx-auto w-full px-6 py-8">
       <ArticleList
         :search-results="isFiltering ? search.results.value : null"
         :is-searching="isFiltering"
