@@ -23,6 +23,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("[Startup] Initializing database...")
     init_db()
+    # Auto-seed sources (idempotent — only inserts new ones)
+    from .seeds.sources import seed_sources
+    from .database import SessionLocal
+    with SessionLocal() as db:
+        n = seed_sources(db)
+        if n:
+            logger.info(f"[Startup] Seeded {n} new sources")
     logger.info("[Startup] Starting scheduler...")
     start_scheduler()
     logger.info("[Startup] MedNews API ready.")
