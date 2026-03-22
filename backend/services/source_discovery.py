@@ -1,6 +1,6 @@
-"""AI-powered source discovery using Groq.
+"""AI-powered source discovery using xAI Grok.
 
-Weekly job that asks Groq to identify new Hungarian medical news sources
+Weekly job that asks Grok to identify new Hungarian medical news sources
 not already in our database, then adds them.
 """
 import logging
@@ -32,14 +32,14 @@ Válaszolj KIZÁRÓLAG valid JSON tömbként:
 
 
 async def discover_new_sources(existing_urls: list[str]) -> list[dict]:
-    """Use Groq to find new Hungarian medical news sources not in our DB."""
-    from .enrichment import _call_groq, _extract_json
+    """Use Grok to find new Hungarian medical news sources not in our DB."""
+    from .enrichment import _call_llm, _extract_json, DEFAULT_MODEL
 
     urls_sample = "\n".join(existing_urls[:30])
     prompt = DISCOVERY_PROMPT.format(existing_urls=urls_sample)
 
     try:
-        raw = await _call_groq(prompt, model="llama-3.3-70b-versatile")
+        raw = await _call_llm(prompt, model=DEFAULT_MODEL)
         candidates = _extract_json(raw)
         existing_set = set(existing_urls)
         new_sources = [s for s in candidates if s.get("url") not in existing_set]

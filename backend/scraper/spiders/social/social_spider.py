@@ -15,7 +15,7 @@ class SocialSpider(BaseSpider):
     """Stub spider for social media sources (LinkedIn, Facebook, Instagram).
 
     These platforms block scraping. This spider logs a warning and exits cleanly.
-    Source auto-discovery (Phase 3) will surface social content via Groq web search.
+    Source auto-discovery (Phase 3) will surface social content via Grok web search.
     """
     name = "social_spider"
     source_type = "social"

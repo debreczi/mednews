@@ -1,6 +1,6 @@
 <template>
   <article
-    class="bg-bg-card rounded-card overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-row group h-72"
+    class="bg-bg-card rounded-card overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-row group min-h-72"
     :class="{ 'border-l-4 border-red-400': article.is_tragic }"
   >
     <!-- Image -->
@@ -38,7 +38,7 @@
       </p>
 
       <!-- MedNews title -->
-      <h2 class="font-serif text-lg font-bold text-text-primary leading-snug mb-2 line-clamp-3 group-hover:text-accent-teal transition-colors">
+      <h2 class="font-serif text-lg font-bold text-text-primary leading-snug mb-2 group-hover:text-accent-teal transition-colors">
         {{ article.mednews_title || article.original_title }}
       </h2>
 
@@ -53,7 +53,7 @@
       </div>
 
       <!-- Summary -->
-      <p class="text-text-secondary text-sm leading-relaxed flex-1 line-clamp-4">
+      <p class="text-text-secondary text-sm leading-relaxed flex-1">
         {{ article.summary }}
       </p>
 

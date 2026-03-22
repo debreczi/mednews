@@ -1,4 +1,4 @@
-"""Groq API enrichment service.
+"""xAI Grok enrichment service.
 
 Enriches articles with AI-generated Hungarian content:
 - mednews_title: humorous/cynical title (max 80 chars)
@@ -14,11 +14,13 @@ import logging
 import re
 from typing import Any
 
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 
 from ..config import settings
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MODEL = settings.llm_model
 
 # Pre-enrichment tragic keyword check — avoids wasting tokens on a detection call
 TRAGIC_KEYWORDS = [
@@ -39,19 +41,46 @@ def is_tragic(text: str) -> bool:
 
 
 def _build_enrichment_prompt(articles: list[dict]) -> str:
-    """Build the batch enrichment prompt for Groq."""
+    """Build the batch enrichment prompt."""
     articles_json = json.dumps(
         [{"id": a["_idx"], "title": a["original_title"], "tragic": a["_tragic"]}
          for a in articles],
         ensure_ascii=False,
         indent=2,
     )
-    return f"""Te egy magyar egészségügyi IT hírportál szerkesztője vagy, aki humoros és cinikus cikkeket ír szakembereknek.
+    return f"""Te egy magyar egészségügyi IT hírportál szerkesztője vagy. Az olvasóid magyar egészségügyi IT szakemberek — fáradt, cinikus, de okos emberek.
+
+LEGFONTOSABB SZABÁLY:
+Az összefoglaló ELŐSZÖR informatív: a szakember az összefoglalóból értse meg, miről szól a hír, milyen számok/tények vannak benne. Az olvasónak NE kelljen az eredeti cikket megnyitnia. A humor MÁSODLAGOS: fanyar megjegyzés a végén, vagy szellemes megfogalmazás — de SOHA nem az információ rovására.
+
+STÍLUS:
+- A humor a TÉMÁBÓL fakadjon, ne erőltesd bele kívülálló utalásokat (pl. ne emlegesd az EESZT-t ha a cikk nem arról szól, ne írj admin123-at ha nem kiberbiztonsági téma).
+- Fanyar, száraz humor: inkább egy odavetett megjegyzés a mondat végén, mint erőltetett vicc.
+- NE találj ki tényeket, NE adj hozzá hamis információt a humor kedvéért.
+- Ha tragic=true: komoly, tisztelettudó, humor nélkül.
+
+PÉLDÁK:
+
+Eredeti: "Az EESZT rendszer új funkcióval bővül 2026-ban"
+Cím: "Az EESZT végre megtanult egy új trükköt — és ezúttal nem is fagyott le közben"
+Összefoglaló: "Az Elektronikus Egészségügyi Szolgáltatási Tér új modulja lehetővé teszi az orvosok számára a laboreredmények valós idejű megosztását a betegekkel. A fejlesztés három éve volt tervben, ami az egészségügyi IT-ben meglepően gyorsnak számít. A rendszer márciustól éles üzemben működik, és eddig mindössze kétszer kellett újraindítani — ami rekordnak számít."
+
+Eredeti: "Novartis picks up experimental breast cancer therapy for $2B"
+Cím: "A Novartis 2 milliárdért vett mellrákos reménységet — drága bevásárlás"
+Összefoglaló: "A Novartis 2 milliárd dollárért megvásárolta a Synnovation kísérleti mellrák-terápiáját (SNV4818), amely a korai fázisú vizsgálatokban ígéretes eredményeket mutatott HER2-negatív betegeknél. A deal a Novartis onkológiai portfólióját erősíti, és 2027-re várják a III-as fázisú vizsgálatok indulását. Ennyi pénzért már egy kis magyar kórházat is lehetne digitalizálni — de az kevésbé szexi a befektetőknek."
+
+Eredeti: "A telemedicina használata 40%-kal nőtt Magyarországon"
+Cím: "A magyarok rájöttek, hogy a pizsamában is lehet orvoshoz menni"
+Összefoglaló: "A KSH legfrissebb adatai szerint a telemedicina igénybevétele 40%-kal emelkedett 2025-höz képest. A háziorvosok egyharmada már rendszeresen használ videókonzultációt, bár az idősebb páciensek körében a \"doktor úr, nem látom a képernyőt\" továbbra is a leggyakoribb panasz. A trend folytatódik, a szoftvercégek pedig dörzsölik a tenyerüket."
+
+Eredeti: "Adatvizualizáció az egészségügyi döntéshozatalban"
+Cím: "Dashboardok a kórházban: végre nem Excelben nézik, ki halt meg"
+Összefoglaló: "A modern adatvizualizációs eszközök (Power BI, Tableau, Superset) egyre nagyobb teret nyernek a magyar kórházi döntéshozatalban. A kórházvezetők most már valós idejű dashboardokon követhetik az ágykihasználtságot, a várólistákat és a műtéti kapacitásokat. A legnagyobb kihívás nem a technológia, hanem az, hogy rávegyék a főorvosokat: ne nyomtassák ki a dashboardot A4-es papírra."
 
 Kaptál {len(articles)} cikket. Minden cikkhez generálj:
-1. "mednews_title": Szellemes, humoros vagy cinikus magyar cím (max 80 karakter). Ha a cikk szomorú/tragikus (tragic=true), legyen tisztelettudó és komoly.
-2. "summary": 2-3 mondatos magyar összefoglaló. Ha tragic=false: legyen szellemes, ironikus, de informatív — az olvasónak NE kelljen elolvasnia az eredetit. Ha tragic=true: legyen tisztelettudó, tárgyilagos, humor nélkül.
-3. "link_text": Magyar CTA szöveg, max 40 karakter, amely tartalmaz egy utalást az eredeti cikkre. Pl: "Ha tényleg érdekel, itt az eredeti:"
+1. "mednews_title": Szellemes, fanyar magyar cím (max 80 karakter). Úgy fogalmazd, ahogy egy magyar kolléga mondaná élőszóban — természetes köznyelv, NEM fordításízű. Ha tragic=true → komoly, tisztelettudó.
+2. "summary": 6-10 mondatos, részletes magyar összefoglaló a fenti stílusban. ELŐSZÖR az érdemi információ (számok, tények, nevek, következmények), UTÁNA fanyar megjegyzés. Az olvasónak NE kelljen az eredetit elolvasnia. Ha tragic=true → tárgyilagos, humor nélkül.
+3. "link_text": Kontextuális magyar CTA, max 40 karakter. Pl: "Ha tényleg érdekel:", "A hivatalos közlemény itt:", "A részletekért:"
 
 Válaszolj KIZÁRÓLAG valid JSON tömbként, semmi mást ne írj:
 [
@@ -83,26 +112,23 @@ Cikkek:
 {articles_json}"""
 
 
-async def _call_groq(prompt: str, model: str = "llama-3.3-70b-versatile") -> str:
-    """Single Groq API call with fallback model on rate limit."""
-    client = AsyncGroq(api_key=settings.groq_api_key)
-    try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=4096,
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        if "rate_limit" in str(e).lower() and model != "llama-3.1-8b-instant":
-            logger.warning("[Groq] Rate limit hit — falling back to llama-3.1-8b-instant")
-            return await _call_groq(prompt, model="llama-3.1-8b-instant")
-        raise
+async def _call_llm(prompt: str, model: str = DEFAULT_MODEL) -> str:
+    """Call the configured LLM API (OpenAI-compatible)."""
+    client = AsyncOpenAI(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url or None,
+    )
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_completion_tokens=4096,
+    )
+    return response.choices[0].message.content
 
 
 def _extract_json(text: str) -> Any:
-    """Extract JSON array from Groq response (handles markdown code fences)."""
+    """Extract JSON array from LLM response (handles markdown code fences)."""
     # Strip markdown code fences if present
     text = re.sub(r"```(?:json)?\s*", "", text).strip()
     # Find the JSON array
@@ -116,7 +142,7 @@ async def _enrich_batch(batch: list[dict]) -> list[dict]:
     """Enrich one batch of articles, with retry logic."""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            raw = await _call_groq(_build_enrichment_prompt(batch))
+            raw = await _call_llm(_build_enrichment_prompt(batch))
             results = _extract_json(raw)
             # Map results back by id
             by_id = {r["id"]: r for r in results}
@@ -169,12 +195,3 @@ async def enrich_articles(articles: list[dict]) -> list[dict]:
 
     logger.info(f"[Enrichment] Enriched {len(results)} articles")
     return results
-
-
-async def log_enrichment_cost(tokens_used: int, model: str = "llama-3.3-70b-versatile"):
-    """Estimate and log Groq API cost (approximate pricing)."""
-    # Approximate: $0.59 per 1M tokens for llama-3.3-70b
-    cost_per_million = 0.59 if "70b" in model else 0.05
-    cost = (tokens_used / 1_000_000) * cost_per_million
-    logger.info(f"[Enrichment] Tokens used: {tokens_used} | Est. cost: ${cost:.4f}")
-    return cost

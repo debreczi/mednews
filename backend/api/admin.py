@@ -1,12 +1,18 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+import asyncio
+import logging
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from ..config import settings
 from ..database import get_db
+from ..models.article import Article
 from ..models.source import Source
 from ..models.audit_log import AuditLog
 from ..schemas.audit_log import AuditLogOut, PaginatedAuditLog
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -19,11 +25,73 @@ def require_admin(x_admin_key: str = Header(...)):
 @router.post("/trigger-scrape", dependencies=[Depends(require_admin)])
 async def trigger_scrape():
     """Manually trigger a full scrape cycle."""
-    # Dispatcher imported here to avoid circular imports
     from ..services.scheduler import run_scrape_job
-    import asyncio
     asyncio.create_task(run_scrape_job())
     return {"status": "scrape job queued"}
+
+
+@router.post("/re-enrich", dependencies=[Depends(require_admin)])
+async def re_enrich(
+    status: str = Query(
+        "all",
+        description="Which articles to re-enrich: 'all', 'failed', or 'pending'",
+    ),
+    limit: int = Query(
+        0,
+        description="Max articles to re-enrich (0 = all matching)",
+    ),
+    db: Session = Depends(get_db),
+):
+    """Re-run Grok enrichment on existing articles in the database."""
+    stmt = select(Article)
+    if status == "failed":
+        stmt = stmt.where(Article.enrichment_status == "failed")
+    elif status == "pending":
+        stmt = stmt.where(Article.enrichment_status == "pending")
+    # 'all' re-enriches everything
+    if limit > 0:
+        stmt = stmt.limit(limit)
+
+    articles = list(db.scalars(stmt).all())
+    if not articles:
+        return {"status": "no articles matched", "filter": status, "count": 0}
+
+    # Build dicts for the enrichment service
+    to_enrich = [
+        {"original_title": a.original_title, "_db_id": a.id}
+        for a in articles
+    ]
+
+    async def _run():
+        try:
+            from ..services.enrichment import enrich_articles
+            enriched = await enrich_articles(to_enrich)
+
+            # Write results back to DB
+            from ..database import SessionLocal
+            updated = 0
+            with SessionLocal() as session:
+                for item in enriched:
+                    db_id = item.get("_db_id")
+                    if db_id is None:
+                        continue
+                    art = session.get(Article, db_id)
+                    if not art:
+                        continue
+                    art.mednews_title = item.get("mednews_title", art.mednews_title)
+                    art.summary = item.get("summary", art.summary)
+                    art.link_text = item.get("link_text", art.link_text)
+                    art.is_tragic = item.get("is_tragic", art.is_tragic)
+                    art.enrichment_status = item.get("enrichment_status", art.enrichment_status)
+                    updated += 1
+                session.commit()
+            logger.info(f"[Re-enrich] Completed {updated}/{len(enriched)} articles")
+        except Exception as e:
+            logger.error(f"[Re-enrich] Failed: {e}", exc_info=True)
+
+    count = len(to_enrich)
+    await _run()
+    return {"status": "re-enrichment complete", "filter": status, "count": count}
 
 
 @router.get("/logs", response_model=PaginatedAuditLog, dependencies=[Depends(require_admin)])

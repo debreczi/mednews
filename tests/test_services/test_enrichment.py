@@ -36,9 +36,9 @@ class TestTragicDetection:
             assert is_tragic(f"Cikk {kw} témában") is True, f"Keyword not detected: {kw}"
 
 
-# ── Enrichment with mocked Groq (AC-5, AC-7) ─────────────────────────────────
+# ── Enrichment with mocked Grok (AC-5, AC-7) ──────────────────────────────────
 
-MOCK_GROQ_RESPONSE = json.dumps([
+MOCK_GROK_RESPONSE = json.dumps([
     {
         "id": 0,
         "mednews_title": "AI felszámolja az orvosi bürokráciát (spoiler: nem)",
@@ -61,9 +61,9 @@ async def test_enrich_articles_success():
         {"original_title": "New AI system in healthcare"},
         {"original_title": "EESZT system update"},
     ]
-    mock_response = AsyncMock(return_value=MOCK_GROQ_RESPONSE)
+    mock_response = AsyncMock(return_value=MOCK_GROK_RESPONSE)
 
-    with patch("backend.services.enrichment._call_groq", mock_response):
+    with patch("backend.services.enrichment._call_llm", mock_response):
         result = await enrich_articles(articles)
 
     assert len(result) == 2
@@ -78,7 +78,7 @@ async def test_enrichment_fallback_on_failure():
     """AC-7: On 3 failures, mednews_title falls back to original_title."""
     articles = [{"original_title": "Eredeti cím itt"}]
 
-    with patch("backend.services.enrichment._call_groq", side_effect=Exception("Groq 500")):
+    with patch("backend.services.enrichment._call_llm", side_effect=Exception("Grok 500")):
         result = await enrich_articles(articles)
 
     assert result[0]["mednews_title"] == "Eredeti cím itt"
@@ -94,7 +94,7 @@ async def test_tragic_article_flagged():
         {"id": 0, "mednews_title": "Szomorú esemény", "summary": "Tisztelettudó összefoglaló.", "link_text": "Eredeti cikk:"}
     ]))
 
-    with patch("backend.services.enrichment._call_groq", mock_response):
+    with patch("backend.services.enrichment._call_llm", mock_response):
         result = await enrich_articles(articles)
 
     assert result[0]["is_tragic"] is True
@@ -108,7 +108,7 @@ async def test_non_tragic_article_not_flagged():
         {"id": 0, "mednews_title": "Megint telefonálunk orvossal", "summary": "Humoros összefoglaló.", "link_text": "Eredeti:"}
     ]))
 
-    with patch("backend.services.enrichment._call_groq", mock_response):
+    with patch("backend.services.enrichment._call_llm", mock_response):
         result = await enrich_articles(articles)
 
     assert result[0]["is_tragic"] is False
@@ -124,7 +124,7 @@ async def test_mednews_title_truncated_to_80_chars():
         {"id": 0, "mednews_title": long_title, "summary": "Summary.", "link_text": "Link:"}
     ]))
 
-    with patch("backend.services.enrichment._call_groq", mock_response):
+    with patch("backend.services.enrichment._call_llm", mock_response):
         result = await enrich_articles(articles)
 
     assert len(result[0]["mednews_title"]) <= 80
@@ -142,7 +142,7 @@ async def test_retry_then_succeed():
     articles = [{"original_title": "Test article"}]
     call_count = 0
 
-    async def flaky_groq(*args, **kwargs):
+    async def flaky_grok(*args, **kwargs):
         nonlocal call_count
         call_count += 1
         if call_count < 2:
@@ -151,7 +151,7 @@ async def test_retry_then_succeed():
             {"id": 0, "mednews_title": "Recovered title", "summary": "OK.", "link_text": "Link:"}
         ])
 
-    with patch("backend.services.enrichment._call_groq", flaky_groq):
+    with patch("backend.services.enrichment._call_llm", flaky_grok):
         result = await enrich_articles(articles)
 
     assert result[0]["mednews_title"] == "Recovered title"

@@ -9,8 +9,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # AI
-    groq_api_key: str = ""
+    # AI (LLM enrichment)
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_model: str = "gpt-5.4-mini"
 
     # Scraping
     relevance_threshold: float = 6.0

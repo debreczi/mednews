@@ -3,7 +3,7 @@
 Pipeline order (set in settings.py):
   100 DuplicateFilterPipeline  — drop already-seen URLs
   200 ScoreFilterPipeline      — drop items below RELEVANCE_THRESHOLD
-  300 EnrichmentPipeline       — AI title/summary/link_text via Groq
+  300 EnrichmentPipeline       — AI title/summary/link_text via xAI Grok
   400 DatabasePipeline         — persist to SQLite
 """
 import asyncio
@@ -40,7 +40,7 @@ class DuplicateFilterPipeline:
 
 
 class ScoreFilterPipeline:
-    """Score each article via Groq and drop those below RELEVANCE_THRESHOLD."""
+    """Score each article via Grok and drop those below RELEVANCE_THRESHOLD."""
 
     def open_spider(self, spider):
         from backend.config import settings
@@ -59,7 +59,7 @@ class ScoreFilterPipeline:
 
 
 class EnrichmentPipeline:
-    """Batch-enrich articles with Groq: score → filter → title/summary/link_text."""
+    """Batch-enrich articles with Grok: score → filter → title/summary/link_text."""
 
     BATCH_SIZE = 10
 

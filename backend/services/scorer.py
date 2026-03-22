@@ -1,4 +1,4 @@
-"""Article relevance scoring via Groq API.
+"""Article relevance scoring via xAI Grok API.
 
 Scores articles 1-10 for relevance to Hungarian medical IT professionals.
 Batch processes to minimise API calls.
@@ -17,11 +17,11 @@ MAX_RETRIES = 3
 
 async def score_articles_batch(articles: list[dict]) -> list[float]:
     """Score a batch of articles. Returns list of scores in same order."""
-    from .enrichment import _call_groq, _extract_json, _build_scoring_prompt, RETRY_DELAY
+    from .enrichment import _call_llm, _extract_json, _build_scoring_prompt, RETRY_DELAY
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            raw = await _call_groq(_build_scoring_prompt(articles))
+            raw = await _call_llm(_build_scoring_prompt(articles))
             results = _extract_json(raw)
             by_id = {r["id"]: float(r["score"]) for r in results}
             return [by_id.get(a["_idx"], 5.0) for a in articles]
