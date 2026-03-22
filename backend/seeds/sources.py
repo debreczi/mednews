@@ -91,6 +91,7 @@ SOURCES = [
     {"name": "Wáberer Medical Center RSS", "url": "https://wmc.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
     {"name": "Doktor24 Blog RSS", "url": "https://doktor24.hu/blog/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
     {"name": "Medicover RSS", "url": "https://medicover.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
+    {"name": "FirstMed Budapest RSS", "url": "https://firstmed.hu/feed", "type": "rss", "spider_name": "rss_spider", "region": "HU"},
 
     # ── EU / European Health & Digital Health (verified RSS) ─────────────
     {"name": "Euronews Health RSS", "url": "https://www.euronews.com/rss?level=vertical&name=health", "type": "rss", "spider_name": "rss_spider", "region": "EU"},
