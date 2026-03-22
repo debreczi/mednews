@@ -6,15 +6,27 @@ No Twisted, no reactor, no Playwright for RSS feeds.
 """
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 import feedparser
+import httpx
 
 logger = logging.getLogger(__name__)
 
 # Max concurrent feed fetches
 _SEMAPHORE = asyncio.Semaphore(8)
+_HTTP_CLIENT: httpx.AsyncClient | None = None
+
+_OG_IMAGE_RE = re.compile(
+    r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+_OG_IMAGE_RE2 = re.compile(
+    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+    re.IGNORECASE,
+)
 
 
 async def run_all_spiders() -> dict:
@@ -74,6 +86,31 @@ def _load_existing_urls() -> set:
     except Exception as e:
         logger.warning(f"[Runner] Could not load existing URLs: {e}")
         return set()
+
+
+async def _get_http_client() -> httpx.AsyncClient:
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None or _HTTP_CLIENT.is_closed:
+        _HTTP_CLIENT = httpx.AsyncClient(
+            timeout=10, follow_redirects=True,
+            headers={"User-Agent": "MedNews/1.0 (RSS aggregator)"},
+        )
+    return _HTTP_CLIENT
+
+
+async def _fetch_og_image(url: str) -> str | None:
+    """Fetch an article page and extract og:image meta tag."""
+    try:
+        client = await _get_http_client()
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            return None
+        # Only scan the first 50KB for performance
+        head = resp.text[:50_000]
+        match = _OG_IMAGE_RE.search(head) or _OG_IMAGE_RE2.search(head)
+        return match.group(1) if match else None
+    except Exception:
+        return None
 
 
 async def _fetch_source(source, existing_urls: set) -> list:
@@ -147,6 +184,16 @@ async def _score_enrich_save(articles: list) -> int:
         return 0
 
     logger.info(f"[Runner] {len(scored)} articles passed scoring — enriching...")
+
+    # Fetch og:image for articles missing images
+    needs_image = [s for s in scored if not s["_raw"].get("image_url")]
+    if needs_image:
+        logger.info(f"[Runner] Fetching og:image for {len(needs_image)} articles...")
+        og_tasks = [_fetch_og_image(s["_raw"]["url"]) for s in needs_image]
+        og_results = await asyncio.gather(*og_tasks)
+        for s, img in zip(needs_image, og_results):
+            if img:
+                s["_raw"]["image_url"] = img
 
     # Re-attach raw article data
     for s in scored:

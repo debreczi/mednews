@@ -94,6 +94,33 @@ async def re_enrich(
     return {"status": "re-enrichment complete", "filter": status, "count": count}
 
 
+@router.post("/backfill-images", dependencies=[Depends(require_admin)])
+async def backfill_images(db: Session = Depends(get_db)):
+    """Fetch og:image for articles that have no image_url."""
+    from ..scraper.runner import _fetch_og_image
+
+    articles = list(db.scalars(
+        select(Article).where(Article.image_url.is_(None)).order_by(Article.id.desc())
+    ).all())
+
+    if not articles:
+        return {"status": "no articles need images", "count": 0}
+
+    import asyncio
+    tasks = [_fetch_og_image(a.url) for a in articles]
+    results = await asyncio.gather(*tasks)
+
+    updated = 0
+    for art, img in zip(articles, results):
+        if img:
+            art.image_url = img
+            updated += 1
+    db.commit()
+
+    logger.info(f"[Backfill] Updated {updated}/{len(articles)} article images")
+    return {"status": "backfill complete", "checked": len(articles), "updated": updated}
+
+
 @router.get("/logs", response_model=PaginatedAuditLog, dependencies=[Depends(require_admin)])
 def get_logs(after: int | None = None, db: Session = Depends(get_db)):
     stmt = select(AuditLog).order_by(AuditLog.id.desc())

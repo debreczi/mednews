@@ -10,6 +10,7 @@ export const useArticlesStore = defineStore('articles', () => {
   const hasMore = ref(true)
   const searchQuery = ref('')
   const filterDate = ref(null)
+  const regionFilter = ref(null) // null = mixed, 'HU', 'EU', 'INTL'
 
   async function fetchArticles(reset = false) {
     if (loading.value || (!hasMore.value && !reset)) return
@@ -24,6 +25,7 @@ export const useArticlesStore = defineStore('articles', () => {
     try {
       const params = {}
       if (nextCursor.value) params.after = nextCursor.value
+      if (regionFilter.value) params.region = regionFilter.value
 
       const { data } = await client.get('/articles', { params })
       articles.value.push(...data.articles)
@@ -35,5 +37,10 @@ export const useArticlesStore = defineStore('articles', () => {
     }
   }
 
-  return { articles, nextCursor, totalCount, loading, hasMore, searchQuery, filterDate, fetchArticles }
+  function setRegionFilter(region) {
+    regionFilter.value = region
+    fetchArticles(true)
+  }
+
+  return { articles, nextCursor, totalCount, loading, hasMore, searchQuery, filterDate, regionFilter, fetchArticles, setRegionFilter }
 })
